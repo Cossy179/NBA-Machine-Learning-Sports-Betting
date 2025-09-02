@@ -8,3 +8,11 @@ tqdm==4.66.1
 flask==3.0.0
 scikit-learn==1.3.1
 toml==0.10.2
+# Enhanced model requirements
+optuna>=3.0.0
+lightgbm>=4.0.0
+joblib>=1.3.0
+shap>=0.42.0
+plotly>=5.15.0
+seaborn>=0.12.0
+requests>=2.31.0
