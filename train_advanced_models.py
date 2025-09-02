@@ -52,7 +52,11 @@ def train_enhanced_features():
     print("="*50)
     
     try:
-        from src.Process_Data.Enhanced_Features import EnhancedFeatureEngine
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("Enhanced_Features", "src/Process-Data/Enhanced_Features.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        EnhancedFeatureEngine = module.EnhancedFeatureEngine
         
         enhancer = EnhancedFeatureEngine()
         enhanced_df = enhancer.enhance_dataset()
@@ -70,7 +74,11 @@ def train_advanced_xgboost():
     print("="*50)
     
     try:
-        from src.Train_Models.Advanced_XGBoost_ML import AdvancedXGBoostTrainer
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("Advanced_XGBoost_ML", "src/Train-Models/Advanced_XGBoost_ML.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        AdvancedXGBoostTrainer = module.AdvancedXGBoostTrainer
         
         trainer = AdvancedXGBoostTrainer()
         trainer.train_optimized_model(n_trials=30)  # Reduced for faster training
@@ -88,7 +96,11 @@ def train_multi_target_models():
     print("="*50)
     
     try:
-        from src.Train_Models.Multi_Target_Predictor import MultiTargetNBAPredictor
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("Multi_Target_Predictor", "src/Train-Models/Multi_Target_Predictor.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        MultiTargetNBAPredictor = module.MultiTargetNBAPredictor
         
         predictor = MultiTargetNBAPredictor()
         predictor.train_all_models()
@@ -106,7 +118,11 @@ def train_ensemble_system():
     print("="*50)
     
     try:
-        from src.Train_Models.Ensemble_System import EnsembleNBAPredictor
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("Ensemble_System", "src/Train-Models/Ensemble_System.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        EnsembleNBAPredictor = module.EnsembleNBAPredictor
         
         ensemble = EnsembleNBAPredictor()
         ensemble.train_ensemble()

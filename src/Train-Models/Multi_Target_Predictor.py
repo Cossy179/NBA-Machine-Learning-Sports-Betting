@@ -22,7 +22,7 @@ class MultiTargetNBAPredictor:
         
     def load_data(self):
         """Load enhanced dataset with all features"""
-        con = sqlite3.connect("../../Data/dataset.sqlite")
+        con = sqlite3.connect("Data/dataset.sqlite")
         
         # Check if enhanced dataset exists
         cursor = con.cursor()

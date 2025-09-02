@@ -24,7 +24,7 @@ class AdvancedXGBoostTrainer:
         
     def load_data(self):
         """Load and prepare data with proper time-based splits"""
-        con = sqlite3.connect("../../Data/dataset.sqlite")
+        con = sqlite3.connect("Data/dataset.sqlite")
         df = pd.read_sql_query(f'select * from "{self.dataset_name}"', con, index_col="index")
         con.close()
         

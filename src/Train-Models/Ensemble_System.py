@@ -28,7 +28,7 @@ class EnsembleNBAPredictor:
         
     def load_data(self):
         """Load and prepare data"""
-        con = sqlite3.connect("../../Data/dataset.sqlite")
+        con = sqlite3.connect("Data/dataset.sqlite")
         
         # Try enhanced dataset first
         cursor = con.cursor()
