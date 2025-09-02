@@ -177,7 +177,7 @@ class EnhancedFeatureEngine:
             'season_series_lead': 0
         }
     
-    def enhance_dataset(self, dataset_path: str = "../../Data/dataset.sqlite", 
+    def enhance_dataset(self, dataset_path: str = "Data/dataset.sqlite", 
                        table_name: str = "dataset_2012-24_new") -> pd.DataFrame:
         """Add all enhanced features to the existing dataset"""
         # Load existing dataset
