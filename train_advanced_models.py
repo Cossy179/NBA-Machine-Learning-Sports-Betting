@@ -133,6 +133,63 @@ def train_ensemble_system():
         print(f"⚠ Ensemble system training failed: {e}")
         return False
 
+def train_boosted_system():
+    """Train boosted model system"""
+    print("\n" + "="*50)
+    print("TRAINING BOOSTED MODEL SYSTEM")
+    print("="*50)
+    
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("Boosted_Model_System", "src/Train-Models/Boosted_Model_System.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        BoostedModelSystem = module.BoostedModelSystem
+        
+        system = BoostedModelSystem()
+        system.train_boosted_models()
+        system.save_boosted_system("BoostedNBA_v1")
+        print("✓ Boosted system trained successfully")
+        return True
+    except Exception as e:
+        print(f"⚠ Boosted system training failed: {e}")
+        return False
+
+def train_player_models():
+    """Train player stats and parlay models"""
+    print("\n" + "="*50)
+    print("TRAINING PLAYER & PARLAY MODELS")
+    print("="*50)
+    
+    try:
+        # Build player database
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("PlayerStatsProvider", "src/DataProviders/PlayerStatsProvider.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        PlayerStatsProvider = module.PlayerStatsProvider
+        
+        provider = PlayerStatsProvider()
+        player_data = provider.build_comprehensive_player_database()
+        
+        if not player_data.empty:
+            # Train parlay models
+            spec = importlib.util.spec_from_file_location("ParlayPredictor", "src/Predict/ParlayPredictor.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            ParlayPredictor = module.ParlayPredictor
+            
+            predictor = ParlayPredictor()
+            predictor.calculate_player_correlations(player_data)
+            predictor.train_player_prop_models(player_data)
+            predictor.save_parlay_models()
+            
+        print("✓ Player and parlay models trained successfully")
+        return True
+    except Exception as e:
+        print(f"⚠ Player models training failed: {e}")
+        return False
+
 def main():
     """Main training pipeline"""
     print("🏀 NBA ADVANCED MODEL TRAINING PIPELINE")
@@ -160,6 +217,12 @@ def main():
     print("\n5. Training ensemble system...")
     results['ensemble'] = train_ensemble_system()
     
+    print("\n6. Training boosted system...")
+    results['boosted'] = train_boosted_system()
+    
+    print("\n7. Training player & parlay models...")
+    results['player_models'] = train_player_models()
+    
     # Summary
     print("\n" + "="*60)
     print("TRAINING SUMMARY")
@@ -176,7 +239,9 @@ def main():
     
     if successful_models > 0:
         print(f"\n🎉 Training complete! You can now run:")
-        print(f"   py enhanced_main.py -advanced -realtime -odds=fanduel -kc")
+        print(f"   py ultimate_nba_predictor.py -odds=fanduel -realtime -parlays -kc")
+        print(f"   py ultimate_nba_predictor.py -backtest  # Test on 2023-24 season")
+        print(f"   py enhanced_main.py -advanced -realtime -odds=fanduel -kc  # Legacy")
     else:
         print(f"\n⚠ Training failed. Check error messages above.")
         print(f"   You can still use original models with:")
