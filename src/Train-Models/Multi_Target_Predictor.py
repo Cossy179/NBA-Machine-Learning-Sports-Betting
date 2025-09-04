@@ -96,31 +96,35 @@ class MultiTargetNBAPredictor:
             params, dtrain,
             num_boost_round=1000,
             evals=[(dtrain, "train"), (dval, "val")],
-            early_stopping_rounds=50,
+
             verbose_eval=False
         )
         
-        # Calibrate probabilities
-        from sklearn.base import BaseEstimator, ClassifierMixin
+        # Calibrate probabilities using isotonic regression directly
+        from sklearn.isotonic import IsotonicRegression
         
-        class BoosterWrapper(BaseEstimator, ClassifierMixin):
-            def __init__(self, booster):
-                self.booster = booster
-            def fit(self, X, y):
-                return self
-            def predict_proba(self, X):
-                d = xgb.DMatrix(X)
-                p = self.booster.predict(d, iteration_range=(0, self.booster.best_iteration + 1))
-                return np.column_stack([1 - p, p])
+        # Get uncalibrated predictions on validation set
+        dval = xgb.DMatrix(data['X_val'])
+        # Use best_iteration if available, otherwise use all iterations
+        if hasattr(model, 'best_iteration') and model.best_iteration is not None:
+            val_probs = model.predict(dval, iteration_range=(0, model.best_iteration + 1))
+        else:
+            val_probs = model.predict(dval)
         
-        wrapper = BoosterWrapper(model)
-        calibrator = CalibratedClassifierCV(wrapper, method="isotonic", cv="prefit")
-        calibrator.fit(data['X_val'], data['y_val'])
+        # Fit isotonic regression for calibration
+        calibrator = IsotonicRegression(out_of_bounds='clip')
+        calibrator.fit(val_probs, data['y_val'])
         
         self.models['win_loss'] = {'model': model, 'calibrator': calibrator, 'type': 'classification'}
         
         # Evaluate
-        probs = calibrator.predict_proba(data['X_test'])[:, 1]
+        dtest = xgb.DMatrix(data['X_test'])
+        # Use best_iteration if available, otherwise use all iterations
+        if hasattr(model, 'best_iteration') and model.best_iteration is not None:
+            test_probs_uncal = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
+        else:
+            test_probs_uncal = model.predict(dtest)
+        probs = calibrator.predict(test_probs_uncal)
         preds = (probs >= 0.5).astype(int)
         accuracy = (preds == data['y_test']).mean()
         print(f"Win/Loss Accuracy: {accuracy:.4f}")
@@ -149,7 +153,7 @@ class MultiTargetNBAPredictor:
             params, dtrain,
             num_boost_round=1000,
             evals=[(dtrain, "train"), (dval, "val")],
-            early_stopping_rounds=50,
+
             verbose_eval=False
         )
         
@@ -157,7 +161,11 @@ class MultiTargetNBAPredictor:
         
         # Evaluate
         dtest = xgb.DMatrix(data['X_test'])
-        preds = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
+        # Use best_iteration if available, otherwise use all iterations
+        if hasattr(model, 'best_iteration') and model.best_iteration is not None:
+            preds = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
+        else:
+            preds = model.predict(dtest)
         rmse = np.sqrt(mean_squared_error(data['y_test'], preds))
         mae = mean_absolute_error(data['y_test'], preds)
         print(f"{target_name} - RMSE: {rmse:.4f}, MAE: {mae:.4f}")
@@ -197,7 +205,7 @@ class MultiTargetNBAPredictor:
             params, dtrain,
             num_boost_round=1000,
             evals=[(dtrain, "train"), (dval, "val")],
-            early_stopping_rounds=50,
+
             verbose_eval=False
         )
         
@@ -205,7 +213,11 @@ class MultiTargetNBAPredictor:
         
         # Evaluate
         dtest = xgb.DMatrix(X_test_filtered)
-        probs = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
+        # Use best_iteration if available, otherwise use all iterations
+        if hasattr(model, 'best_iteration') and model.best_iteration is not None:
+            probs = model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
+        else:
+            probs = model.predict(dtest)
         preds = (probs >= 0.5).astype(int)
         accuracy = (preds == y_test_filtered).mean()
         print(f"Over/Under Accuracy: {accuracy:.4f}")
@@ -247,9 +259,15 @@ class MultiTargetNBAPredictor:
             if model_info['type'] == 'classification':
                 if 'calibrator' in model_info:
                     # Use calibrated probabilities
-                    probs = model_info['calibrator'].predict_proba(X)[0]
-                    predictions[f'{name}_prob'] = probs[1] if len(probs) > 1 else probs[0]
-                    predictions[f'{name}_pred'] = int(probs[1] > 0.5) if len(probs) > 1 else int(probs[0] > 0.5)
+                    dmatrix = xgb.DMatrix(X)
+                    model = model_info['model']
+                    if hasattr(model, 'best_iteration') and model.best_iteration is not None:
+                        uncal_prob = model.predict(dmatrix, iteration_range=(0, model.best_iteration + 1))[0]
+                    else:
+                        uncal_prob = model.predict(dmatrix)[0]
+                    cal_prob = model_info['calibrator'].predict([uncal_prob])[0]
+                    predictions[f'{name}_prob'] = cal_prob
+                    predictions[f'{name}_pred'] = int(cal_prob > 0.5)
                 else:
                     # Direct XGBoost prediction
                     dmatrix = xgb.DMatrix(X)
@@ -267,17 +285,17 @@ class MultiTargetNBAPredictor:
     def save_models(self, base_name="MultiTarget_NBA"):
         """Save all trained models"""
         for name, model_info in self.models.items():
-            model_info['model'].save_model(f"../../Models/XGBoost_Models/{base_name}_{name}.json")
+            model_info['model'].save_model(f"Models/XGBoost_Models/{base_name}_{name}.json")
             
             if 'calibrator' in model_info:
-                joblib.dump(model_info['calibrator'], f"../../Models/XGBoost_Models/{base_name}_{name}_calibrator.pkl")
+                joblib.dump(model_info['calibrator'], f"Models/XGBoost_Models/{base_name}_{name}_calibrator.pkl")
         
         # Save feature columns and model info
-        joblib.dump(self.feature_cols, f"../../Models/XGBoost_Models/{base_name}_features.pkl")
+        joblib.dump(self.feature_cols, f"Models/XGBoost_Models/{base_name}_features.pkl")
         
         model_metadata = {name: {k: v for k, v in info.items() if k != 'model' and k != 'calibrator'} 
                          for name, info in self.models.items()}
-        joblib.dump(model_metadata, f"../../Models/XGBoost_Models/{base_name}_metadata.pkl")
+        joblib.dump(model_metadata, f"Models/XGBoost_Models/{base_name}_metadata.pkl")
         
         print(f"All models saved with base name: {base_name}")
 
