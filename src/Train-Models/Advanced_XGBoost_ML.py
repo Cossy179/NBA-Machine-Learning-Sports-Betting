@@ -127,29 +127,22 @@ class AdvancedXGBoostTrainer:
             verbose_eval=50
         )
         
-        # Calibrate probabilities
+        # Calibrate probabilities using isotonic regression directly
         print("Calibrating probabilities...")
-        from sklearn.base import BaseEstimator, ClassifierMixin
+        from sklearn.isotonic import IsotonicRegression
         
-        class BoosterWrapper(BaseEstimator, ClassifierMixin):
-            def __init__(self, booster, feature_names):
-                self.booster = booster
-                self.feature_names = feature_names
-                
-            def fit(self, X, y):
-                return self
-                
-            def predict_proba(self, X):
-                d = xgb.DMatrix(X)
-                p = self.booster.predict(d, iteration_range=(0, self.booster.best_iteration + 1))
-                return np.column_stack([1 - p, p])
+        # Get uncalibrated predictions on validation set
+        dval = xgb.DMatrix(data['X_val'])
+        val_probs = self.best_model.predict(dval, iteration_range=(0, self.best_model.best_iteration + 1))
         
-        wrapper = BoosterWrapper(self.best_model, self.feature_cols)
-        self.calibrator = CalibratedClassifierCV(wrapper, method="isotonic", cv="prefit")
-        self.calibrator.fit(data['X_val'], data['y_val'])
+        # Fit isotonic regression for calibration
+        self.calibrator = IsotonicRegression(out_of_bounds='clip')
+        self.calibrator.fit(val_probs, data['y_val'])
         
         # Evaluate on test set
-        p_test_cal = self.calibrator.predict_proba(data['X_test'])[:, 1]
+        dtest = xgb.DMatrix(data['X_test'])
+        p_test_uncal = self.best_model.predict(dtest, iteration_range=(0, self.best_model.best_iteration + 1))
+        p_test_cal = self.calibrator.predict(p_test_uncal)
         y_pred = (p_test_cal >= 0.5).astype(int)
         
         print("\n" + "="*50)
@@ -167,9 +160,9 @@ class AdvancedXGBoostTrainer:
         if self.best_model is None:
             raise ValueError("No model trained yet!")
             
-        self.best_model.save_model(f"../../Models/XGBoost_Models/{model_name}.json")
-        joblib.dump(self.calibrator, f"../../Models/XGBoost_Models/{model_name}_calibrator.pkl")
-        joblib.dump(self.feature_cols, f"../../Models/XGBoost_Models/{model_name}_features.pkl")
+        self.best_model.save_model(f"Models/XGBoost_Models/{model_name}.json")
+        joblib.dump(self.calibrator, f"Models/XGBoost_Models/{model_name}_calibrator.pkl")
+        joblib.dump(self.feature_cols, f"Models/XGBoost_Models/{model_name}_features.pkl")
         
         print(f"Model saved as {model_name}")
 

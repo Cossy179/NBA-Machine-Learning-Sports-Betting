@@ -127,7 +127,6 @@ class EnsembleNBAPredictor:
         xgb_model.fit(
             X_train, y_train,
             eval_set=[(X_val, y_val)],
-            early_stopping_rounds=50,
             verbose=False
         )
         self.base_models['xgboost'] = xgb_model
@@ -349,25 +348,25 @@ class EnsembleNBAPredictor:
         for name, model in self.base_models.items():
             if name in ['neural_network', 'mlp']:
                 if name == 'neural_network':
-                    model['model'].save(f"../../Models/Ensemble_Models/{base_name}_{name}.h5")
+                    model['model'].save(f"Models/Ensemble_Models/{base_name}_{name}.h5")
                 else:
-                    joblib.dump(model['model'], f"../../Models/Ensemble_Models/{base_name}_{name}.pkl")
-                joblib.dump(model['scaler'], f"../../Models/Ensemble_Models/{base_name}_{name}_scaler.pkl")
+                    joblib.dump(model['model'], f"Models/Ensemble_Models/{base_name}_{name}.pkl")
+                joblib.dump(model['scaler'], f"Models/Ensemble_Models/{base_name}_{name}_scaler.pkl")
             else:
-                joblib.dump(model, f"../../Models/Ensemble_Models/{base_name}_{name}.pkl")
+                joblib.dump(model, f"Models/Ensemble_Models/{base_name}_{name}.pkl")
         
         # Save meta-model
-        joblib.dump(self.meta_model, f"../../Models/Ensemble_Models/{base_name}_meta_model.pkl")
+        joblib.dump(self.meta_model, f"Models/Ensemble_Models/{base_name}_meta_model.pkl")
         
         # Save feature columns
-        joblib.dump(self.feature_cols, f"../../Models/Ensemble_Models/{base_name}_features.pkl")
+        joblib.dump(self.feature_cols, f"Models/Ensemble_Models/{base_name}_features.pkl")
         
         print(f"Ensemble saved with base name: {base_name}")
 
 if __name__ == "__main__":
     # Create directory for ensemble models
     import os
-    os.makedirs("../../Models/Ensemble_Models", exist_ok=True)
+    os.makedirs("Models/Ensemble_Models", exist_ok=True)
     
     ensemble = EnsembleNBAPredictor()
     ensemble.train_ensemble()
