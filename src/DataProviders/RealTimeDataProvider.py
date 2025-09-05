@@ -25,6 +25,21 @@ class RealTimeDataProvider:
         self.cache = {}
         self.cache_duration = 300  # 5 minutes
         
+        # NBA API endpoints
+        self.nba_endpoints = {
+            'injuries': 'https://stats.nba.com/stats/commonteamroster',
+            'lineups': 'https://stats.nba.com/stats/leaguegamefinder',
+            'schedule': 'https://stats.nba.com/stats/leaguegamefinder'
+        }
+        
+        # Market intelligence thresholds
+        self.market_thresholds = {
+            'reverse_line_movement': 0.05,  # 5% line movement against public
+            'steam_move': 0.02,             # 2% rapid line movement
+            'sharp_money': 0.60,            # 60% of money on minority side
+            'public_fade': 0.80             # 80%+ public on one side
+        }
+        
     def get_cached_data(self, key: str):
         """Get cached data if still valid"""
         if key in self.cache:
@@ -45,29 +60,19 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # This would connect to a real injury API
-            # For now, return mock data structure
-            injury_data = {
-                'team': team,
-                'date': date or datetime.now(),
-                'injured_players': [
-                    {
-                        'player_name': 'Mock Player',
-                        'position': 'PG',
-                        'injury_type': 'Knee',
-                        'status': 'Questionable',
-                        'games_missed': 2,
-                        'salary_impact': 8500000,  # Annual salary
-                        'usage_rate': 0.28,
-                        'defensive_rating': 112.5,
-                        'offensive_rating': 118.3
-                    }
-                ],
-                'total_salary_impact': 0,
-                'key_players_out': 0,
-                'defensive_impact_score': 0,
-                'offensive_impact_score': 0
-            }
+            # Connect to NBA injury API
+            injury_data = self._fetch_injury_data_from_api(team, date)
+            if not injury_data:
+                # Return empty structure if no API data available
+                injury_data = {
+                    'team': team,
+                    'date': date or datetime.now(),
+                    'injured_players': [],
+                    'total_salary_impact': 0,
+                    'key_players_out': 0,
+                    'defensive_impact_score': 0,
+                    'offensive_impact_score': 0
+                }
             
             # Calculate impact scores
             for player in injury_data['injured_players']:
@@ -95,37 +100,28 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # Mock lineup data structure
-            lineup_data = {
-                'game_date': game_date or datetime.now(),
-                'lineups_confirmed': False,
-                'home_team': {
-                    'team': home_team,
-                    'starters': [
-                        {'name': 'Mock Player 1', 'position': 'PG', 'salary': 25000000, 'usage_rate': 0.28},
-                        {'name': 'Mock Player 2', 'position': 'SG', 'salary': 18000000, 'usage_rate': 0.22},
-                        {'name': 'Mock Player 3', 'position': 'SF', 'salary': 15000000, 'usage_rate': 0.18},
-                        {'name': 'Mock Player 4', 'position': 'PF', 'salary': 12000000, 'usage_rate': 0.16},
-                        {'name': 'Mock Player 5', 'position': 'C', 'salary': 20000000, 'usage_rate': 0.24}
-                    ],
-                    'total_salary': 90000000,
-                    'avg_usage_rate': 0.216,
-                    'lineup_rating': 0.85  # 0-1 scale
-                },
-                'away_team': {
-                    'team': away_team,
-                    'starters': [
-                        {'name': 'Mock Player A', 'position': 'PG', 'salary': 22000000, 'usage_rate': 0.26},
-                        {'name': 'Mock Player B', 'position': 'SG', 'salary': 16000000, 'usage_rate': 0.20},
-                        {'name': 'Mock Player C', 'position': 'SF', 'salary': 18000000, 'usage_rate': 0.19},
-                        {'name': 'Mock Player D', 'position': 'PF', 'salary': 14000000, 'usage_rate': 0.17},
-                        {'name': 'Mock Player E', 'position': 'C', 'salary': 19000000, 'usage_rate': 0.23}
-                    ],
-                    'total_salary': 89000000,
-                    'avg_usage_rate': 0.210,
-                    'lineup_rating': 0.82
+            # Fetch real lineup data from NBA API
+            lineup_data = self._fetch_lineup_data_from_api(home_team, away_team, game_date)
+            if not lineup_data:
+                # Return empty structure if no API data available
+                lineup_data = {
+                    'game_date': game_date or datetime.now(),
+                    'lineups_confirmed': False,
+                    'home_team': {
+                        'team': home_team,
+                        'starters': [],
+                        'total_salary': 0,
+                        'avg_usage_rate': 0,
+                        'lineup_rating': 0.5
+                    },
+                    'away_team': {
+                        'team': away_team,
+                        'starters': [],
+                        'total_salary': 0,
+                        'avg_usage_rate': 0,
+                        'lineup_rating': 0.5
+                    }
                 }
-            }
             
             self.set_cached_data(cache_key, lineup_data)
             return lineup_data
@@ -142,50 +138,33 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # Mock betting market data
-            market_data = {
-                'game_date': game_date or datetime.now(),
-                'moneyline': {
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'home_odds': {
-                        'current': -150,
-                        'opening': -140,
-                        'movement': -10,
-                        'bet_percentage': 65.2,  # % of bets on home team
-                        'money_percentage': 58.7  # % of money on home team
+            # Fetch real betting market data from odds API
+            market_data = self._fetch_betting_market_data_from_api(home_team, away_team, game_date)
+            if not market_data:
+                # Return empty structure if no API data available
+                market_data = {
+                    'game_date': game_date or datetime.now(),
+                    'moneyline': {
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'home_odds': {'current': 0, 'opening': 0, 'movement': 0, 'bet_percentage': 50, 'money_percentage': 50},
+                        'away_odds': {'current': 0, 'opening': 0, 'movement': 0, 'bet_percentage': 50, 'money_percentage': 50}
                     },
-                    'away_odds': {
-                        'current': +130,
-                        'opening': +120,
-                        'movement': +10,
-                        'bet_percentage': 34.8,
-                        'money_percentage': 41.3
+                    'spread': {
+                        'current_line': 0, 'opening_line': 0, 'movement': 0,
+                        'home_bet_percentage': 50, 'away_bet_percentage': 50,
+                        'reverse_line_movement': False
+                    },
+                    'total': {
+                        'current_line': 220, 'opening_line': 220, 'movement': 0,
+                        'over_bet_percentage': 50, 'under_bet_percentage': 50,
+                        'steam_move': False
+                    },
+                    'market_sentiment': {
+                        'public_bias': 'neutral', 'sharp_money': 'neutral',
+                        'contrarian_opportunity': False, 'line_value': 0.5
                     }
-                },
-                'spread': {
-                    'current_line': -3.5,
-                    'opening_line': -3.0,
-                    'movement': -0.5,
-                    'home_bet_percentage': 52.1,
-                    'away_bet_percentage': 47.9,
-                    'reverse_line_movement': False  # Line moved against public money
-                },
-                'total': {
-                    'current_line': 220.5,
-                    'opening_line': 219.0,
-                    'movement': +1.5,
-                    'over_bet_percentage': 61.3,
-                    'under_bet_percentage': 38.7,
-                    'steam_move': True  # Sharp money indicator
-                },
-                'market_sentiment': {
-                    'public_bias': 'home',  # Where public is betting
-                    'sharp_money': 'away',  # Where sharp money is
-                    'contrarian_opportunity': True,
-                    'line_value': 0.73  # 0-1 scale, higher = better value
                 }
-            }
             
             self.set_cached_data(cache_key, market_data)
             return market_data
@@ -202,18 +181,21 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # Mock weather data
-            weather_data = {
-                'city': city,
-                'date': game_date or datetime.now(),
-                'temperature': 72,  # Fahrenheit
-                'humidity': 45,     # Percentage
-                'precipitation': 0, # Inches
-                'wind_speed': 8,    # MPH
-                'conditions': 'Clear',
-                'travel_impact_score': 0.1,  # 0-1 scale, higher = more impact
-                'arena_conditions': 'Normal'  # Indoor arenas less affected
-            }
+            # Fetch weather data from weather API
+            weather_data = self._fetch_weather_data_from_api(city, game_date)
+            if not weather_data:
+                # Return neutral weather if no API data
+                weather_data = {
+                    'city': city,
+                    'date': game_date or datetime.now(),
+                    'temperature': 72,
+                    'humidity': 45,
+                    'precipitation': 0,
+                    'wind_speed': 5,
+                    'conditions': 'Clear',
+                    'travel_impact_score': 0.0,
+                    'arena_conditions': 'Normal'
+                }
             
             self.set_cached_data(cache_key, weather_data)
             return weather_data
@@ -230,23 +212,26 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # Mock travel data
-            travel_data = {
-                'team': team,
-                'current_game_date': game_date,
-                'last_game_date': game_date - timedelta(days=2),
-                'last_game_location': 'Los Angeles',
-                'current_location': 'Boston',
-                'miles_traveled': 2600,
-                'time_zones_crossed': 3,
-                'days_rest': 2,
-                'back_to_back': False,
-                'games_in_last_week': 3,
-                'home_games_last_10': 4,
-                'road_games_last_10': 6,
-                'fatigue_score': 0.35,  # 0-1 scale, higher = more fatigued
-                'travel_advantage': -0.15  # -1 to 1, negative = disadvantage
-            }
+            # Calculate travel data from team schedule
+            travel_data = self._calculate_travel_data_from_schedule(team, game_date)
+            if not travel_data:
+                # Return neutral travel data if no schedule available
+                travel_data = {
+                    'team': team,
+                    'current_game_date': game_date,
+                    'last_game_date': game_date - timedelta(days=2),
+                    'last_game_location': 'Unknown',
+                    'current_location': 'Unknown',
+                    'miles_traveled': 0,
+                    'time_zones_crossed': 0,
+                    'days_rest': 2,
+                    'back_to_back': False,
+                    'games_in_last_week': 3,
+                    'home_games_last_10': 5,
+                    'road_games_last_10': 5,
+                    'fatigue_score': 0.0,
+                    'travel_advantage': 0.0
+                }
             
             # Calculate fatigue score
             fatigue_factors = [
@@ -271,22 +256,25 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # Mock referee data
-            ref_data = {
-                'game_date': game_date,
-                'crew_chief': 'John Doe',
-                'referee_1': 'Jane Smith',
-                'referee_2': 'Bob Johnson',
-                'historical_stats': {
-                    'avg_total_fouls': 42.3,
-                    'avg_technical_fouls': 1.2,
-                    'home_team_foul_bias': 0.02,  # Positive = home team gets more calls
-                    'over_under_bias': -1.8,  # Points difference from average
-                    'pace_impact': 0.95,  # Multiplier for game pace
-                    'tight_game_calls': 0.73  # 0-1, how much they "let them play" in close games
-                },
-                'referee_rating': 0.82  # 0-1 scale, higher = more consistent/fair
-            }
+            # Fetch referee assignments from NBA API
+            ref_data = self._fetch_referee_data_from_api(game_date, home_team, away_team)
+            if not ref_data:
+                # Return neutral referee data if no API data
+                ref_data = {
+                    'game_date': game_date,
+                    'crew_chief': 'Unknown',
+                    'referee_1': 'Unknown',
+                    'referee_2': 'Unknown',
+                    'historical_stats': {
+                        'avg_total_fouls': 42.0,
+                        'avg_technical_fouls': 1.0,
+                        'home_team_foul_bias': 0.0,
+                        'over_under_bias': 0.0,
+                        'pace_impact': 1.0,
+                        'tight_game_calls': 0.5
+                    },
+                    'referee_rating': 0.5
+                }
             
             self.set_cached_data(cache_key, ref_data)
             return ref_data
@@ -303,26 +291,29 @@ class RealTimeDataProvider:
             return cached
             
         try:
-            # Mock sentiment data
-            sentiment_data = {
-                'home_team_sentiment': 0.65,  # 0-1 scale, 0.5 = neutral
-                'away_team_sentiment': 0.42,
-                'game_buzz_score': 0.78,  # How much attention the game is getting
-                'public_betting_sentiment': {
-                    'home_team_confidence': 0.71,
-                    'away_team_confidence': 0.29,
-                    'total_confidence': 0.83  # Confidence in over/under
-                },
-                'media_coverage': {
-                    'articles_count': 47,
-                    'positive_coverage_home': 0.68,
-                    'positive_coverage_away': 0.45,
-                    'injury_concern_mentions': 12,
-                    'revenge_game_narrative': False,
-                    'playoff_implications': True
-                },
-                'contrarian_indicator': 0.23  # 0-1, higher = good fade opportunity
-            }
+            # Fetch social sentiment from various APIs
+            sentiment_data = self._fetch_sentiment_data_from_api(home_team, away_team, game_date)
+            if not sentiment_data:
+                # Return neutral sentiment if no API data
+                sentiment_data = {
+                    'home_team_sentiment': 0.5,
+                    'away_team_sentiment': 0.5,
+                    'game_buzz_score': 0.5,
+                    'public_betting_sentiment': {
+                        'home_team_confidence': 0.5,
+                        'away_team_confidence': 0.5,
+                        'total_confidence': 0.5
+                    },
+                    'media_coverage': {
+                        'articles_count': 0,
+                        'positive_coverage_home': 0.5,
+                        'positive_coverage_away': 0.5,
+                        'injury_concern_mentions': 0,
+                        'revenge_game_narrative': False,
+                        'playoff_implications': False
+                    },
+                    'contrarian_indicator': 0.0
+                }
             
             self.set_cached_data(cache_key, sentiment_data)
             return sentiment_data
@@ -363,6 +354,28 @@ class RealTimeDataProvider:
         
         # Calculate composite scores
         comprehensive_data['composite_scores'] = self.calculate_composite_scores(comprehensive_data)
+        
+        # Add advanced market intelligence
+        if comprehensive_data['betting_markets']:
+            comprehensive_data['market_intelligence'] = self.analyze_market_intelligence(
+                comprehensive_data['betting_markets']
+            )
+        
+        # Add injury severity scores
+        comprehensive_data['injury_scores'] = {
+            'home_team': self.get_injury_severity_score(comprehensive_data['injuries']['home_team']),
+            'away_team': self.get_injury_severity_score(comprehensive_data['injuries']['away_team'])
+        }
+        
+        # Add lineup strength differential
+        comprehensive_data['lineup_differential'] = self.calculate_lineup_strength_differential(
+            comprehensive_data['lineups']
+        )
+        
+        # Add weather impact
+        comprehensive_data['weather_impact'] = self.get_weather_impact_score(
+            comprehensive_data['weather']
+        )
         
         return comprehensive_data
     
@@ -428,6 +441,255 @@ class RealTimeDataProvider:
             print(f"Error calculating composite scores: {e}")
         
         return scores
+    
+    def analyze_market_intelligence(self, betting_data: Dict) -> Dict:
+        """Advanced market intelligence analysis"""
+        intelligence = {
+            'sharp_money_indicators': [],
+            'public_fade_opportunities': [],
+            'line_movement_signals': [],
+            'market_efficiency_score': 0.5,
+            'contrarian_value': 0.0
+        }
+        
+        if not betting_data:
+            return intelligence
+        
+        try:
+            # Analyze moneyline market
+            if 'moneyline' in betting_data:
+                ml_data = betting_data['moneyline']
+                
+                # Sharp money detection
+                home_odds = ml_data.get('home_odds', {})
+                away_odds = ml_data.get('away_odds', {})
+                
+                home_bet_pct = home_odds.get('bet_percentage', 50)
+                home_money_pct = home_odds.get('money_percentage', 50)
+                
+                # Sharp money indicator: Money % significantly different from bet %
+                if abs(home_money_pct - home_bet_pct) > 15:
+                    if home_money_pct > home_bet_pct:
+                        intelligence['sharp_money_indicators'].append('Sharp money on home team')
+                    else:
+                        intelligence['sharp_money_indicators'].append('Sharp money on away team')
+                
+                # Public fade opportunity
+                if home_bet_pct > self.market_thresholds['public_fade']:
+                    intelligence['public_fade_opportunities'].append('Fade public on home team')
+                elif home_bet_pct < (100 - self.market_thresholds['public_fade']):
+                    intelligence['public_fade_opportunities'].append('Fade public on away team')
+            
+            # Analyze spread market
+            if 'spread' in betting_data:
+                spread_data = betting_data['spread']
+                
+                # Reverse line movement detection
+                if spread_data.get('reverse_line_movement', False):
+                    intelligence['line_movement_signals'].append('Reverse line movement detected')
+                
+                movement = abs(spread_data.get('movement', 0))
+                if movement > self.market_thresholds['reverse_line_movement']:
+                    intelligence['line_movement_signals'].append(f'Significant line movement: {movement}')
+            
+            # Analyze total market
+            if 'total' in betting_data:
+                total_data = betting_data['total']
+                
+                if total_data.get('steam_move', False):
+                    intelligence['line_movement_signals'].append('Steam move on total detected')
+                
+                over_pct = total_data.get('over_bet_percentage', 50)
+                if over_pct > self.market_thresholds['public_fade']:
+                    intelligence['public_fade_opportunities'].append('Consider under bet')
+                elif over_pct < (100 - self.market_thresholds['public_fade']):
+                    intelligence['public_fade_opportunities'].append('Consider over bet')
+            
+            # Calculate overall market efficiency score
+            signal_count = len(intelligence['sharp_money_indicators']) + len(intelligence['line_movement_signals'])
+            intelligence['market_efficiency_score'] = max(0.1, min(0.9, 0.5 - signal_count * 0.1))
+            
+            # Calculate contrarian value
+            fade_opportunities = len(intelligence['public_fade_opportunities'])
+            intelligence['contrarian_value'] = min(1.0, fade_opportunities * 0.3)
+            
+        except Exception as e:
+            print(f"Error analyzing market intelligence: {e}")
+        
+        return intelligence
+    
+    def get_injury_severity_score(self, injury_data: Dict) -> float:
+        """Calculate injury severity impact score"""
+        if not injury_data or not injury_data.get('injured_players'):
+            return 0.0
+        
+        severity_score = 0.0
+        
+        for player in injury_data['injured_players']:
+            usage_rate = player.get('usage_rate', 0)
+            status = player.get('status', 'Available')
+            
+            # Weight by player importance and injury status
+            if status == 'Out':
+                severity_score += usage_rate * 1.0
+            elif status == 'Doubtful':
+                severity_score += usage_rate * 0.7
+            elif status == 'Questionable':
+                severity_score += usage_rate * 0.3
+        
+        return min(1.0, severity_score)  # Cap at 1.0
+    
+    def calculate_lineup_strength_differential(self, lineup_data: Dict) -> float:
+        """Calculate strength differential between starting lineups"""
+        if not lineup_data or not lineup_data.get('lineups_confirmed'):
+            return 0.0
+        
+        home_rating = lineup_data.get('home_team', {}).get('lineup_rating', 0.5)
+        away_rating = lineup_data.get('away_team', {}).get('lineup_rating', 0.5)
+        
+        return home_rating - away_rating
+    
+    def get_weather_impact_score(self, weather_data: Dict, game_type: str = 'indoor') -> float:
+        """Calculate weather impact on game (mainly for travel)"""
+        if not weather_data or game_type == 'indoor':
+            return weather_data.get('travel_impact_score', 0.0)
+        
+        # For outdoor games (rare in NBA), weather has more direct impact
+        impact = 0.0
+        
+        temp = weather_data.get('temperature', 72)
+        if temp < 32 or temp > 90:  # Extreme temperatures
+            impact += 0.2
+        
+        precipitation = weather_data.get('precipitation', 0)
+        if precipitation > 0.5:  # Heavy rain/snow
+            impact += 0.3
+        
+        wind_speed = weather_data.get('wind_speed', 0)
+        if wind_speed > 20:  # High winds
+            impact += 0.1
+        
+        return min(1.0, impact)
+    
+    def _fetch_injury_data_from_api(self, team: str, date: datetime = None) -> Dict:
+        """Fetch real injury data from NBA API or other sources"""
+        try:
+            # NBA Stats API call for team roster and injury status
+            if self.api_keys.get('nba_api'):
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Referer': 'https://stats.nba.com/',
+                    'Origin': 'https://stats.nba.com'
+                }
+                
+                # This would make actual API calls in production
+                # For now, return None to fall back to empty structure
+                pass
+                
+            # Alternative: SportsRadar API
+            if self.api_keys.get('sports_radar'):
+                # SportsRadar injury report API call
+                pass
+                
+            return None  # No API data available
+            
+        except Exception as e:
+            print(f"Error fetching injury data from API: {e}")
+            return None
+    
+    def _fetch_lineup_data_from_api(self, home_team: str, away_team: str, game_date: datetime = None) -> Dict:
+        """Fetch real starting lineup data from NBA API"""
+        try:
+            # NBA Stats API for starting lineups
+            if self.api_keys.get('nba_api'):
+                # This would make actual API calls for confirmed lineups
+                pass
+                
+            # Alternative: RotoWire or other lineup sources
+            if self.api_keys.get('lineup_api'):
+                # Lineup confirmation API call
+                pass
+                
+            return None  # No API data available
+            
+        except Exception as e:
+            print(f"Error fetching lineup data from API: {e}")
+            return None
+    
+    def _fetch_betting_market_data_from_api(self, home_team: str, away_team: str, game_date: datetime = None) -> Dict:
+        """Fetch real betting market data from odds APIs"""
+        try:
+            # The Odds API for betting lines
+            if self.api_keys.get('the_odds_api'):
+                # API call for current odds and line movements
+                pass
+                
+            # Alternative: Pinnacle or other sportsbook APIs
+            if self.api_keys.get('pinnacle_api'):
+                # Pinnacle odds API call
+                pass
+                
+            return None  # No API data available
+            
+        except Exception as e:
+            print(f"Error fetching betting market data from API: {e}")
+            return None
+    
+    def _fetch_weather_data_from_api(self, city: str, game_date: datetime = None) -> Dict:
+        """Fetch weather data from weather API"""
+        try:
+            if self.api_keys.get('weather_api'):
+                # Weather API call for city conditions
+                pass
+                
+            return None  # No API data available
+            
+        except Exception as e:
+            print(f"Error fetching weather data from API: {e}")
+            return None
+    
+    def _calculate_travel_data_from_schedule(self, team: str, game_date: datetime) -> Dict:
+        """Calculate travel metrics from team schedule data"""
+        try:
+            # This would analyze team schedule from NBA API or database
+            # Calculate miles traveled, time zones, rest days, etc.
+            return None  # No schedule data available
+            
+        except Exception as e:
+            print(f"Error calculating travel data: {e}")
+            return None
+    
+    def _fetch_referee_data_from_api(self, game_date: datetime, home_team: str = None, away_team: str = None) -> Dict:
+        """Fetch referee assignments and statistics from NBA API"""
+        try:
+            if self.api_keys.get('nba_api'):
+                # NBA API call for referee assignments
+                pass
+                
+            return None  # No API data available
+            
+        except Exception as e:
+            print(f"Error fetching referee data from API: {e}")
+            return None
+    
+    def _fetch_sentiment_data_from_api(self, home_team: str, away_team: str, game_date: datetime = None) -> Dict:
+        """Fetch social sentiment data from various APIs"""
+        try:
+            # Twitter API for social sentiment
+            if self.api_keys.get('twitter_api'):
+                # Social media sentiment analysis
+                pass
+                
+            # News API for media coverage
+            if self.api_keys.get('news_api'):
+                # News sentiment analysis
+                pass
+                
+            return None  # No API data available
+            
+        except Exception as e:
+            print(f"Error fetching sentiment data from API: {e}")
+            return None
 
 if __name__ == "__main__":
     # Test the real-time data provider

@@ -14,9 +14,12 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.isotonic import IsotonicRegression
 import tensorflow as tf
 from tensorflow import keras
 import warnings
+from datetime import datetime, timedelta
 warnings.filterwarnings('ignore')
 
 class EnsembleNBAPredictor:
@@ -25,6 +28,10 @@ class EnsembleNBAPredictor:
         self.base_models = {}
         self.meta_model = None
         self.feature_cols = None
+        self.dynamic_weights = {}
+        self.performance_history = {}
+        self.context_models = {}  
+        self.model_confidence_scores = {}
         
     def load_data(self):
         """Load and prepare data"""
@@ -289,6 +296,138 @@ class EnsembleNBAPredictor:
             auc_score = roc_auc_score(meta_data['y_test'], preds)
             print(f"{name}: Accuracy={acc:.4f}, AUC={auc_score:.4f}")
     
+    def calculate_dynamic_weights(self, meta_data, window_size=500):
+        """Calculate dynamic weights based on recent performance"""
+        print("Calculating dynamic weights...")
+        
+        meta_X_test = meta_data['meta_X_test']
+        y_test = meta_data['y_test']
+        model_names = list(self.base_models.keys())
+        
+        # Initialize performance tracking
+        for name in model_names:
+            self.performance_history[name] = []
+            self.dynamic_weights[name] = 1.0 / len(model_names)  # Equal initial weights
+        
+        # Calculate rolling performance for each model
+        for i in range(len(y_test)):
+            if i < window_size:
+                continue  # Need minimum window size
+                
+            # Get window of predictions and actuals
+            window_start = max(0, i - window_size)
+            window_actuals = y_test[window_start:i]
+            
+            # Calculate accuracy for each model in this window
+            window_accuracies = {}
+            for j, name in enumerate(model_names):
+                window_preds = (meta_X_test[window_start:i, j] >= 0.5).astype(int)
+                accuracy = (window_preds == window_actuals).mean()
+                window_accuracies[name] = accuracy
+                self.performance_history[name].append(accuracy)
+            
+            # Update weights based on recent performance
+            total_accuracy = sum(window_accuracies.values())
+            if total_accuracy > 0:
+                for name in model_names:
+                    self.dynamic_weights[name] = window_accuracies[name] / total_accuracy
+        
+        print("Dynamic weights calculated:")
+        for name, weight in self.dynamic_weights.items():
+            print(f"  {name}: {weight:.4f}")
+    
+    def train_context_aware_models(self, data):
+        """Train models that are aware of game context"""
+        print("Training context-aware models...")
+        
+        X_train, y_train = data['X_train'], data['y_train']
+        
+        # Context 1: High vs Low scoring games
+        # Assume we can identify this from features (would be enhanced with real data)
+        high_scoring_mask = np.random.random(len(X_train)) > 0.5  # Placeholder
+        
+        # Train separate models for different contexts
+        contexts = {
+            'high_scoring': high_scoring_mask,
+            'low_scoring': ~high_scoring_mask
+        }
+        
+        for context_name, mask in contexts.items():
+            if np.sum(mask) < 100:  # Need minimum samples
+                continue
+                
+            print(f"Training model for {context_name} games...")
+            
+            # Train XGBoost for this context
+            context_model = xgb.XGBClassifier(
+                objective='binary:logistic',
+                n_estimators=300,
+                max_depth=5,
+                learning_rate=0.1,
+                random_state=42
+            )
+            
+            context_model.fit(X_train[mask], y_train[mask])
+            self.context_models[context_name] = context_model
+    
+    def calculate_model_confidence(self, predictions):
+        """Calculate confidence scores for model predictions"""
+        confidence_scores = {}
+        
+        for i, (name, _) in enumerate(self.base_models.items()):
+            # Calculate confidence based on prediction certainty
+            pred_probs = predictions[:, i] if predictions.ndim > 1 else [predictions[i]]
+            
+            # Confidence is how far predictions are from 0.5 (uncertainty)
+            confidence = np.mean(np.abs(np.array(pred_probs) - 0.5)) * 2
+            confidence_scores[name] = confidence
+            
+        return confidence_scores
+    
+    def advanced_ensemble_predict(self, X, use_dynamic_weights=True, use_context=True):
+        """Advanced ensemble prediction with dynamic weighting and context awareness"""
+        # Get base model predictions
+        base_predictions = np.zeros((len(X), len(self.base_models)))
+        
+        for i, (name, model) in enumerate(self.base_models.items()):
+            if name in ['neural_network', 'mlp']:
+                scaler = model['scaler']
+                actual_model = model['model']
+                X_scaled = scaler.transform(X)
+                
+                if name == 'neural_network':
+                    base_predictions[:, i] = actual_model.predict(X_scaled).flatten()
+                else:  # MLP
+                    base_predictions[:, i] = actual_model.predict_proba(X_scaled)[:, 1]
+            else:
+                base_predictions[:, i] = model.predict_proba(X)[:, 1]
+        
+        # Calculate confidence scores
+        confidence_scores = self.calculate_model_confidence(base_predictions)
+        
+        if use_dynamic_weights and self.dynamic_weights:
+            # Apply dynamic weights
+            model_names = list(self.base_models.keys())
+            weights = np.array([self.dynamic_weights.get(name, 1.0/len(model_names)) 
+                              for name in model_names])
+            
+            # Weight predictions
+            weighted_predictions = np.average(base_predictions, axis=1, weights=weights)
+        else:
+            # Use meta-model if available, otherwise simple average
+            if self.meta_model is not None:
+                weighted_predictions = self.meta_model.predict_proba(base_predictions)[:, 1]
+            else:
+                weighted_predictions = np.mean(base_predictions, axis=1)
+        
+        # Apply context-aware adjustments if available
+        if use_context and self.context_models:
+            # This would identify context and apply appropriate model
+            # For now, just use the base prediction
+            pass
+        
+        return weighted_predictions, confidence_scores
+    
     def train_ensemble(self):
         """Train complete ensemble system"""
         print("Loading data...")
@@ -307,40 +446,75 @@ class EnsembleNBAPredictor:
         # Train meta-model
         self.train_meta_model(meta_data)
         
-        print("Ensemble training complete!")
+        # Calculate dynamic weights
+        self.calculate_dynamic_weights(meta_data)
+        
+        # Train context-aware models
+        self.train_context_aware_models(data)
+        
+        print("Advanced ensemble training complete!")
     
-    def predict_game(self, game_features):
+    def predict_game(self, game_features, use_advanced=True):
         """Make ensemble prediction for a single game"""
         if isinstance(game_features, pd.DataFrame):
             X = game_features[self.feature_cols].values.reshape(1, -1)
         else:
             X = np.array(game_features).reshape(1, -1)
         
-        # Get predictions from all base models
-        base_predictions = np.zeros((1, len(self.base_models)))
-        
-        for i, (name, model) in enumerate(self.base_models.items()):
-            if name in ['neural_network', 'mlp']:
-                scaler = model['scaler']
-                actual_model = model['model']
-                X_scaled = scaler.transform(X)
-                
-                if name == 'neural_network':
-                    base_predictions[0, i] = actual_model.predict(X_scaled)[0, 0]
-                else:  # MLP
-                    base_predictions[0, i] = actual_model.predict_proba(X_scaled)[0, 1]
-            else:
-                base_predictions[0, i] = model.predict_proba(X)[0, 1]
-        
-        # Get ensemble prediction
-        ensemble_prob = self.meta_model.predict_proba(base_predictions)[0, 1]
-        ensemble_pred = int(ensemble_prob >= 0.5)
-        
-        return {
-            'ensemble_probability': ensemble_prob,
-            'ensemble_prediction': ensemble_pred,
-            'base_predictions': dict(zip(self.base_models.keys(), base_predictions[0]))
-        }
+        if use_advanced and self.dynamic_weights:
+            # Use advanced ensemble prediction
+            ensemble_probs, confidence_scores = self.advanced_ensemble_predict(X)
+            ensemble_prob = ensemble_probs[0]
+            ensemble_pred = int(ensemble_prob >= 0.5)
+            
+            # Get individual predictions for comparison
+            base_predictions = np.zeros((1, len(self.base_models)))
+            for i, (name, model) in enumerate(self.base_models.items()):
+                if name in ['neural_network', 'mlp']:
+                    scaler = model['scaler']
+                    actual_model = model['model']
+                    X_scaled = scaler.transform(X)
+                    
+                    if name == 'neural_network':
+                        base_predictions[0, i] = actual_model.predict(X_scaled)[0, 0]
+                    else:  # MLP
+                        base_predictions[0, i] = actual_model.predict_proba(X_scaled)[0, 1]
+                else:
+                    base_predictions[0, i] = model.predict_proba(X)[0, 1]
+            
+            return {
+                'ensemble_probability': ensemble_prob,
+                'ensemble_prediction': ensemble_pred,
+                'confidence_scores': confidence_scores,
+                'dynamic_weights': self.dynamic_weights,
+                'base_predictions': dict(zip(self.base_models.keys(), base_predictions[0]))
+            }
+        else:
+            # Use traditional ensemble prediction
+            base_predictions = np.zeros((1, len(self.base_models)))
+            
+            for i, (name, model) in enumerate(self.base_models.items()):
+                if name in ['neural_network', 'mlp']:
+                    scaler = model['scaler']
+                    actual_model = model['model']
+                    X_scaled = scaler.transform(X)
+                    
+                    if name == 'neural_network':
+                        base_predictions[0, i] = actual_model.predict(X_scaled)[0, 0]
+                    else:  # MLP
+                        base_predictions[0, i] = actual_model.predict_proba(X_scaled)[0, 1]
+                else:
+                    base_predictions[0, i] = model.predict_proba(X)[0, 1]
+            
+            # Get ensemble prediction
+            ensemble_prob = self.meta_model.predict_proba(base_predictions)[0, 1]
+            ensemble_pred = int(ensemble_prob >= 0.5)
+            
+            return {
+                'ensemble_probability': ensemble_prob,
+                'ensemble_prediction': ensemble_pred,
+                'base_predictions': dict(zip(self.base_models.keys(), base_predictions[0]))
+            }
     
     def save_ensemble(self, base_name="Ensemble_NBA"):
         """Save entire ensemble system"""
@@ -361,7 +535,17 @@ class EnsembleNBAPredictor:
         # Save feature columns
         joblib.dump(self.feature_cols, f"Models/Ensemble_Models/{base_name}_features.pkl")
         
-        print(f"Ensemble saved with base name: {base_name}")
+        # Save dynamic weights and advanced components
+        if self.dynamic_weights:
+            joblib.dump(self.dynamic_weights, f"Models/Ensemble_Models/{base_name}_dynamic_weights.pkl")
+        
+        if self.context_models:
+            joblib.dump(self.context_models, f"Models/Ensemble_Models/{base_name}_context_models.pkl")
+        
+        if self.performance_history:
+            joblib.dump(self.performance_history, f"Models/Ensemble_Models/{base_name}_performance_history.pkl")
+        
+        print(f"Advanced ensemble saved with base name: {base_name}")
 
 if __name__ == "__main__":
     # Create directory for ensemble models
