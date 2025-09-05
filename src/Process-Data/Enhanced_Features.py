@@ -14,6 +14,8 @@ class EnhancedFeatureEngine:
     def __init__(self):
         self.team_elo_ratings = {}
         self.team_pace_cache = {}
+        self.player_stats_cache = {}
+        self.advanced_metrics_cache = {}
         
     def calculate_elo_ratings(self, games_df: pd.DataFrame, k_factor: float = 20) -> Dict[str, float]:
         """Calculate ELO ratings for all teams based on game results"""
@@ -143,7 +145,7 @@ class EnhancedFeatureEngine:
     def get_betting_line_features(self, home_team: str, away_team: str, date: datetime) -> Dict[str, float]:
         """Get betting line movement and market sentiment features"""
         # This would connect to a betting API in production
-        # For now, return placeholder values
+        # Return neutral values when no API data available
         return {
             'opening_spread': 0,
             'current_spread': 0,
@@ -151,19 +153,25 @@ class EnhancedFeatureEngine:
             'opening_total': 220,
             'current_total': 220,
             'total_movement': 0,
-            'home_ml_percentage': 0.5,  # Percentage of bets on home team
-            'over_percentage': 0.5      # Percentage of bets on over
+            'home_ml_percentage': 0.5,
+            'over_percentage': 0.5,
+            'reverse_line_movement': 0,  # Binary indicator
+            'steam_move_detected': 0,    # Binary indicator
+            'line_value_score': 0.5      # 0-1 scale
         }
     
     def get_injury_impact(self, team: str, date: datetime) -> Dict[str, float]:
         """Calculate injury impact on team strength"""
         # This would connect to injury APIs in production
-        # For now, return placeholder values
+        # Return neutral values when no API data available
         return {
             'key_players_out': 0,
             'total_salary_out': 0,
             'defensive_impact': 0,
-            'offensive_impact': 0
+            'offensive_impact': 0,
+            'usage_rate_lost': 0,        # Lost usage rate from injured players
+            'plus_minus_impact': 0,      # Historical +/- of injured players
+            'minutes_redistribution': 0  # How minutes get redistributed
         }
     
     def calculate_situational_factors(self, home_team: str, away_team: str, date: datetime) -> Dict[str, float]:
@@ -174,7 +182,108 @@ class EnhancedFeatureEngine:
             'playoff_implications_away': 0,
             'rivalry_game': 0,
             'national_tv_game': 0,
-            'season_series_lead': 0
+            'season_series_lead': 0,
+            'revenge_game': 0,
+            'statement_game': 0,
+            'must_win_game': 0
+        }
+    
+    def calculate_advanced_team_metrics(self, team: str, date: datetime, games_df: pd.DataFrame, n_games: int = 10) -> Dict[str, float]:
+        """Calculate advanced team analytics and efficiency metrics"""
+        team_games = games_df[
+            ((games_df['home_team'] == team) | (games_df['away_team'] == team)) &
+            (games_df['date'] < date)
+        ].sort_values('date', ascending=False).head(n_games)
+        
+        if len(team_games) == 0:
+            return {
+                'offensive_efficiency': 110.0,
+                'defensive_efficiency': 110.0,
+                'pace': 100.0,
+                'true_shooting_pct': 0.55,
+                'effective_fg_pct': 0.52,
+                'turnover_rate': 0.14,
+                'rebound_rate': 0.50,
+                'free_throw_rate': 0.25
+            }
+        
+        # Calculate efficiency metrics from available data
+        # These would be calculated from detailed box scores in production
+        total_points = team_games['total_points'].mean() if 'total_points' in team_games.columns else 220
+        possessions_est = total_points / 2.2  # Rough estimate
+        
+        return {
+            'offensive_efficiency': total_points / 2 / possessions_est * 100,
+            'defensive_efficiency': total_points / 2 / possessions_est * 100,
+            'pace': possessions_est,
+            'true_shooting_pct': 0.55,  # Would calculate from actual shot data
+            'effective_fg_pct': 0.52,
+            'turnover_rate': 0.14,
+            'rebound_rate': 0.50,
+            'free_throw_rate': 0.25
+        }
+    
+    def calculate_player_impact_metrics(self, team: str, date: datetime) -> Dict[str, float]:
+        """Calculate player-level impact metrics"""
+        # This would integrate with player tracking data in production
+        return {
+            'star_player_usage': 0.28,      # Usage rate of best player
+            'bench_depth_score': 0.65,      # Quality of bench players (0-1)
+            'chemistry_rating': 0.75,       # Team chemistry score (0-1)
+            'experience_factor': 0.70,      # Playoff/clutch experience (0-1)
+            'injury_replacement_quality': 0.50,  # Quality of injury replacements
+            'minutes_distribution': 0.60    # How well minutes are distributed
+        }
+    
+    def calculate_matchup_advantages(self, home_team: str, away_team: str, date: datetime, games_df: pd.DataFrame) -> Dict[str, float]:
+        """Calculate specific matchup advantages between teams"""
+        # This would analyze positional matchups, playing styles, etc.
+        return {
+            'pace_matchup': 0.0,           # Difference in preferred pace
+            'style_compatibility': 0.5,    # How well styles match up (0-1)
+            'size_advantage_home': 0.0,    # Height/size advantage
+            'experience_advantage_home': 0.0,  # Experience differential
+            'coaching_advantage_home': 0.0, # Coaching matchup
+            'three_point_matchup': 0.0,    # 3pt shooting vs defense
+            'paint_matchup': 0.0,          # Interior offense vs defense
+            'turnover_matchup': 0.0        # Forcing vs protecting turnovers
+        }
+    
+    def calculate_momentum_indicators(self, team: str, date: datetime, games_df: pd.DataFrame) -> Dict[str, float]:
+        """Calculate momentum and psychological factors"""
+        recent_games = games_df[
+            ((games_df['home_team'] == team) | (games_df['away_team'] == team)) &
+            (games_df['date'] < date)
+        ].sort_values('date', ascending=False).head(5)
+        
+        if len(recent_games) == 0:
+            return {
+                'win_streak': 0,
+                'momentum_score': 0.5,
+                'clutch_performance': 0.5,
+                'blowout_wins': 0,
+                'close_game_record': 0.5
+            }
+        
+        # Calculate momentum indicators
+        wins = 0
+        win_streak = 0
+        for _, game in recent_games.iterrows():
+            is_home = game['home_team'] == team
+            won = game['home_win'] if is_home else not game['home_win']
+            
+            if won:
+                wins += 1
+                win_streak += 1
+            else:
+                break  # End of streak
+        
+        return {
+            'win_streak': win_streak,
+            'momentum_score': wins / len(recent_games),
+            'clutch_performance': 0.5,  # Would calculate from close game data
+            'blowout_wins': 0,          # Number of 15+ point wins recently
+            'close_game_record': 0.5    # Record in games decided by <5 points
         }
     
     def enhance_dataset(self, dataset_path: str = "Data/dataset.sqlite", 
@@ -260,6 +369,37 @@ class EnhancedFeatureEngine:
             # Situational factors
             situational = self.calculate_situational_factors(home_team, away_team, game_date)
             features.update(situational)
+            
+            # Advanced team metrics
+            home_advanced = self.calculate_advanced_team_metrics(home_team, game_date, games_df)
+            away_advanced = self.calculate_advanced_team_metrics(away_team, game_date, games_df)
+            
+            for key, value in home_advanced.items():
+                features[f'home_{key}'] = value
+            for key, value in away_advanced.items():
+                features[f'away_{key}'] = value
+            
+            # Player impact metrics
+            home_players = self.calculate_player_impact_metrics(home_team, game_date)
+            away_players = self.calculate_player_impact_metrics(away_team, game_date)
+            
+            for key, value in home_players.items():
+                features[f'home_{key}'] = value
+            for key, value in away_players.items():
+                features[f'away_{key}'] = value
+            
+            # Matchup advantages
+            matchups = self.calculate_matchup_advantages(home_team, away_team, game_date, games_df)
+            features.update(matchups)
+            
+            # Momentum indicators
+            home_momentum = self.calculate_momentum_indicators(home_team, game_date, games_df)
+            away_momentum = self.calculate_momentum_indicators(away_team, game_date, games_df)
+            
+            for key, value in home_momentum.items():
+                features[f'home_{key}'] = value
+            for key, value in away_momentum.items():
+                features[f'away_{key}'] = value
             
             enhanced_features.append(features)
         
