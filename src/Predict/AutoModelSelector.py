@@ -89,7 +89,15 @@ class AutoModelSelector:
     def load_boosted_system(self):
         """Load the boosted model system"""
         try:
-            from src.Train_Models.Boosted_Model_System import BoostedModelSystem
+            import importlib.util
+            import os
+            
+            # Get the path to the Boosted_Model_System module
+            module_path = os.path.join(os.path.dirname(__file__), '..', 'Train-Models', 'Boosted_Model_System.py')
+            spec = importlib.util.spec_from_file_location("Boosted_Model_System", module_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            BoostedModelSystem = module.BoostedModelSystem
             
             # Load metadata
             metadata = joblib.load('Models/Boosted_Models/BoostedNBA_v1_metadata.pkl')
