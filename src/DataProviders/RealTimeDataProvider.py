@@ -1,5 +1,5 @@
 """
-Real-time data provider for live NBA data including injuries, lineups, weather, and market data.
+Real-time data provider for live NBA data including injuries, lineups, and market data.
 Integrates with multiple APIs to enhance prediction accuracy.
 """
 import requests
@@ -11,25 +11,38 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import configuration manager
+try:
+    from src.Utils.ConfigManager import get_config
+except ImportError:
+    # Fallback if running from different directory
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../Utils'))
+    from ConfigManager import get_config
+
 class RealTimeDataProvider:
     def __init__(self):
-        self.api_keys = {
-            # Add your API keys here
-            'nba_api': None,  # NBA official API
-            'sports_radar': None,  # SportsRadar API
-            'the_odds_api': None,  # The Odds API
-            'weather_api': None,  # Weather API
-            'injury_api': None   # Injury API
-        }
+        # Load configuration
+        self.config = get_config()
+        self.api_keys = self.config.config['api_keys']
+        
+        # Get available services
+        self.available_services = self.config.get_available_services()
+        
+        # Print available services on initialization
+        print(f"🔧 RealTimeDataProvider initialized with {sum(self.available_services.values())} available services")
         
         self.cache = {}
-        self.cache_duration = 300  # 5 minutes
+        self.cache_duration = self.config.get_database_config()['cache_duration']
         
-        # NBA API endpoints
-        self.nba_endpoints = {
-            'injuries': 'https://stats.nba.com/stats/commonteamroster',
-            'lineups': 'https://stats.nba.com/stats/leaguegamefinder',
-            'schedule': 'https://stats.nba.com/stats/leaguegamefinder'
+        # API endpoints from configuration
+        self.endpoints = {
+            'nba_stats': self.config.get_endpoint('nba_stats'),
+            'the_odds_api': self.config.get_endpoint('the_odds_api'),
+            'sportsradar': self.config.get_endpoint('sportsradar'),
+            'rapidapi': self.config.get_endpoint('rapidapi'),
+            'news_api': self.config.get_endpoint('news_api')
         }
         
         # Market intelligence thresholds
@@ -173,36 +186,6 @@ class RealTimeDataProvider:
             print(f"Error fetching betting market data: {e}")
             return {}
     
-    def get_weather_conditions(self, city: str, game_date: datetime = None) -> Dict:
-        """Get weather conditions (mainly for outdoor events, but can affect travel)"""
-        cache_key = f"weather_{city}_{game_date}"
-        cached = self.get_cached_data(cache_key)
-        if cached:
-            return cached
-            
-        try:
-            # Fetch weather data from weather API
-            weather_data = self._fetch_weather_data_from_api(city, game_date)
-            if not weather_data:
-                # Return neutral weather if no API data
-                weather_data = {
-                    'city': city,
-                    'date': game_date or datetime.now(),
-                    'temperature': 72,
-                    'humidity': 45,
-                    'precipitation': 0,
-                    'wind_speed': 5,
-                    'conditions': 'Clear',
-                    'travel_impact_score': 0.0,
-                    'arena_conditions': 'Normal'
-                }
-            
-            self.set_cached_data(cache_key, weather_data)
-            return weather_data
-            
-        except Exception as e:
-            print(f"Error fetching weather data: {e}")
-            return {'travel_impact_score': 0}
     
     def get_team_travel_schedule(self, team: str, game_date: datetime) -> Dict:
         """Get team's recent travel schedule and fatigue factors"""
@@ -343,7 +326,6 @@ class RealTimeDataProvider:
             },
             'lineups': self.get_starting_lineups(home_team, away_team, game_date),
             'betting_markets': self.get_betting_market_data(home_team, away_team, game_date),
-            'weather': self.get_weather_conditions(home_team.split()[-1], game_date),  # Use team city
             'travel': {
                 'home_team': self.get_team_travel_schedule(home_team, game_date),
                 'away_team': self.get_team_travel_schedule(away_team, game_date)
@@ -372,10 +354,6 @@ class RealTimeDataProvider:
             comprehensive_data['lineups']
         )
         
-        # Add weather impact
-        comprehensive_data['weather_impact'] = self.get_weather_impact_score(
-            comprehensive_data['weather']
-        )
         
         return comprehensive_data
     
@@ -549,49 +527,23 @@ class RealTimeDataProvider:
         
         return home_rating - away_rating
     
-    def get_weather_impact_score(self, weather_data: Dict, game_type: str = 'indoor') -> float:
-        """Calculate weather impact on game (mainly for travel)"""
-        if not weather_data or game_type == 'indoor':
-            return weather_data.get('travel_impact_score', 0.0)
-        
-        # For outdoor games (rare in NBA), weather has more direct impact
-        impact = 0.0
-        
-        temp = weather_data.get('temperature', 72)
-        if temp < 32 or temp > 90:  # Extreme temperatures
-            impact += 0.2
-        
-        precipitation = weather_data.get('precipitation', 0)
-        if precipitation > 0.5:  # Heavy rain/snow
-            impact += 0.3
-        
-        wind_speed = weather_data.get('wind_speed', 0)
-        if wind_speed > 20:  # High winds
-            impact += 0.1
-        
-        return min(1.0, impact)
     
     def _fetch_injury_data_from_api(self, team: str, date: datetime = None) -> Dict:
         """Fetch real injury data from NBA API or other sources"""
         try:
-            # NBA Stats API call for team roster and injury status
-            if self.api_keys.get('nba_api'):
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': 'https://stats.nba.com/',
-                    'Origin': 'https://stats.nba.com'
-                }
+            # Try SportsRadar API first (most reliable for injury data)
+            if self.available_services.get('sportsradar'):
+                return self._fetch_sportsradar_injuries(team, date)
+            
+            # Try RapidAPI as backup
+            elif self.available_services.get('rapidapi'):
+                return self._fetch_rapidapi_injuries(team, date)
+            
+            # NBA Stats API (free but limited injury info)
+            elif self.available_services.get('nba_stats'):
+                return self._fetch_nba_stats_injuries(team, date)
                 
-                # This would make actual API calls in production
-                # For now, return None to fall back to empty structure
-                pass
-                
-            # Alternative: SportsRadar API
-            if self.api_keys.get('sports_radar'):
-                # SportsRadar injury report API call
-                pass
-                
-            return None  # No API data available
+            return None  # No API services available
             
         except Exception as e:
             print(f"Error fetching injury data from API: {e}")
@@ -620,14 +572,8 @@ class RealTimeDataProvider:
         """Fetch real betting market data from odds APIs"""
         try:
             # The Odds API for betting lines
-            if self.api_keys.get('the_odds_api'):
-                # API call for current odds and line movements
-                pass
-                
-            # Alternative: Pinnacle or other sportsbook APIs
-            if self.api_keys.get('pinnacle_api'):
-                # Pinnacle odds API call
-                pass
+            if self.available_services.get('the_odds_api'):
+                return self._fetch_the_odds_api_data(home_team, away_team, game_date)
                 
             return None  # No API data available
             
@@ -635,18 +581,6 @@ class RealTimeDataProvider:
             print(f"Error fetching betting market data from API: {e}")
             return None
     
-    def _fetch_weather_data_from_api(self, city: str, game_date: datetime = None) -> Dict:
-        """Fetch weather data from weather API"""
-        try:
-            if self.api_keys.get('weather_api'):
-                # Weather API call for city conditions
-                pass
-                
-            return None  # No API data available
-            
-        except Exception as e:
-            print(f"Error fetching weather data from API: {e}")
-            return None
     
     def _calculate_travel_data_from_schedule(self, team: str, game_date: datetime) -> Dict:
         """Calculate travel metrics from team schedule data"""
@@ -675,21 +609,278 @@ class RealTimeDataProvider:
     def _fetch_sentiment_data_from_api(self, home_team: str, away_team: str, game_date: datetime = None) -> Dict:
         """Fetch social sentiment data from various APIs"""
         try:
-            # Twitter API for social sentiment
-            if self.api_keys.get('twitter_api'):
-                # Social media sentiment analysis
-                pass
-                
-            # News API for media coverage
-            if self.api_keys.get('news_api'):
-                # News sentiment analysis
-                pass
+            # News API for media coverage and sentiment
+            if self.available_services.get('news_api'):
+                return self._fetch_news_sentiment(home_team, away_team, game_date)
                 
             return None  # No API data available
             
         except Exception as e:
             print(f"Error fetching sentiment data from API: {e}")
             return None
+    
+    # ===== REAL API IMPLEMENTATION METHODS =====
+    
+    def _fetch_sportsradar_injuries(self, team: str, date: datetime = None) -> Dict:
+        """Fetch injury data from SportsRadar API"""
+        try:
+            api_key = self.api_keys.get('sportsradar')
+            if not api_key:
+                return None
+            
+            # SportsRadar injury report endpoint
+            url = f"{self.endpoints['sportsradar']}/injuries.json"
+            params = {'api_key': api_key}
+            
+            headers = {
+                'User-Agent': 'NBA-ML-Predictor/1.0',
+                'Accept': 'application/json'
+            }
+            
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return self._parse_sportsradar_injuries(data, team)
+            else:
+                print(f"SportsRadar API error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error fetching SportsRadar injury data: {e}")
+            return None
+    
+    def _fetch_rapidapi_injuries(self, team: str, date: datetime = None) -> Dict:
+        """Fetch injury data from RapidAPI"""
+        try:
+            api_key = self.api_keys.get('rapidapi')
+            if not api_key:
+                return None
+            
+            headers = {
+                'X-RapidAPI-Key': api_key,
+                'X-RapidAPI-Host': 'api-nba-v1.p.rapidapi.com'
+            }
+            
+            # Get team injuries
+            url = f"{self.endpoints['rapidapi']}/players"
+            params = {'team': self._get_team_id(team), 'season': '2024'}
+            
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return self._parse_rapidapi_injuries(data, team)
+            else:
+                print(f"RapidAPI error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error fetching RapidAPI injury data: {e}")
+            return None
+    
+    def _fetch_nba_stats_injuries(self, team: str, date: datetime = None) -> Dict:
+        """Fetch injury data from NBA Stats API (limited)"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.nba.com/',
+                'Origin': 'https://www.nba.com'
+            }
+            
+            # NBA Stats doesn't have direct injury endpoint, use team roster
+            url = f"{self.endpoints['nba_stats']}/commonteamroster"
+            params = {
+                'TeamID': self._get_nba_team_id(team),
+                'Season': '2024-25'
+            }
+            
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return self._parse_nba_stats_roster(data, team)
+            else:
+                print(f"NBA Stats API error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error fetching NBA Stats data: {e}")
+            return None
+    
+    def _fetch_the_odds_api_data(self, home_team: str, away_team: str, game_date: datetime = None) -> Dict:
+        """Fetch betting odds from The Odds API"""
+        try:
+            api_key = self.api_keys.get('the_odds_api')
+            if not api_key:
+                return None
+            
+            # The Odds API endpoint for NBA
+            url = f"{self.endpoints['the_odds_api']}/sports/basketball_nba/odds"
+            params = {
+                'apiKey': api_key,
+                'regions': 'us',
+                'markets': 'h2h,spreads,totals',
+                'oddsFormat': 'american',
+                'dateFormat': 'iso'
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return self._parse_odds_data(data, home_team, away_team)
+            else:
+                print(f"The Odds API error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error fetching odds data: {e}")
+            return None
+    
+    def _fetch_news_sentiment(self, home_team: str, away_team: str, game_date: datetime = None) -> Dict:
+        """Fetch news sentiment from News API"""
+        try:
+            api_key = self.api_keys.get('news_api')
+            if not api_key:
+                return None
+            
+            # Search for recent news about both teams
+            query = f'"{home_team}" OR "{away_team}" NBA basketball'
+            url = f"{self.endpoints['news_api']}/everything"
+            
+            params = {
+                'apiKey': api_key,
+                'q': query,
+                'language': 'en',
+                'sortBy': 'publishedAt',
+                'pageSize': 20,
+                'from': (datetime.now() - timedelta(days=7)).isoformat()
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return self._analyze_news_sentiment(data, home_team, away_team)
+            else:
+                print(f"News API error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error fetching news sentiment: {e}")
+            return None
+    
+    # ===== HELPER METHODS FOR API DATA PARSING =====
+    
+    def _get_team_id(self, team_name: str) -> str:
+        """Convert team name to API team ID"""
+        # This would contain mappings for different APIs
+        team_mappings = {
+            'Boston Celtics': 'BOS',
+            'Los Angeles Lakers': 'LAL',
+            # Add more mappings as needed
+        }
+        return team_mappings.get(team_name, team_name)
+    
+    def _get_nba_team_id(self, team_name: str) -> str:
+        """Get NBA Stats API team ID"""
+        # NBA Stats uses numeric IDs
+        nba_team_ids = {
+            'Boston Celtics': '1610612738',
+            'Los Angeles Lakers': '1610612747',
+            # Add more mappings as needed
+        }
+        return nba_team_ids.get(team_name, '1610612738')  # Default to Celtics
+    
+    def _parse_sportsradar_injuries(self, data: Dict, team: str) -> Dict:
+        """Parse SportsRadar injury data"""
+        # Implementation would parse the actual API response
+        return {
+            'team': team,
+            'date': datetime.now(),
+            'injured_players': [],
+            'total_salary_impact': 0,
+            'key_players_out': 0,
+            'defensive_impact_score': 0,
+            'offensive_impact_score': 0
+        }
+    
+    def _parse_rapidapi_injuries(self, data: Dict, team: str) -> Dict:
+        """Parse RapidAPI injury data"""
+        # Implementation would parse the actual API response
+        return {
+            'team': team,
+            'date': datetime.now(),
+            'injured_players': [],
+            'total_salary_impact': 0,
+            'key_players_out': 0,
+            'defensive_impact_score': 0,
+            'offensive_impact_score': 0
+        }
+    
+    def _parse_nba_stats_roster(self, data: Dict, team: str) -> Dict:
+        """Parse NBA Stats roster data"""
+        # Implementation would parse the actual API response
+        return {
+            'team': team,
+            'date': datetime.now(),
+            'injured_players': [],
+            'total_salary_impact': 0,
+            'key_players_out': 0,
+            'defensive_impact_score': 0,
+            'offensive_impact_score': 0
+        }
+    
+    def _parse_odds_data(self, data: Dict, home_team: str, away_team: str) -> Dict:
+        """Parse odds data from The Odds API"""
+        # Implementation would parse the actual API response
+        return {
+            'game_date': datetime.now(),
+            'moneyline': {
+                'home_team': home_team,
+                'away_team': away_team,
+                'home_odds': {'current': 0, 'opening': 0, 'movement': 0, 'bet_percentage': 50, 'money_percentage': 50},
+                'away_odds': {'current': 0, 'opening': 0, 'movement': 0, 'bet_percentage': 50, 'money_percentage': 50}
+            },
+            'spread': {
+                'current_line': 0, 'opening_line': 0, 'movement': 0,
+                'home_bet_percentage': 50, 'away_bet_percentage': 50,
+                'reverse_line_movement': False
+            },
+            'total': {
+                'current_line': 220, 'opening_line': 220, 'movement': 0,
+                'over_bet_percentage': 50, 'under_bet_percentage': 50,
+                'steam_move': False
+            },
+            'market_sentiment': {
+                'public_bias': 'neutral', 'sharp_money': 'neutral',
+                'contrarian_opportunity': False, 'line_value': 0.5
+            }
+        }
+    
+    def _analyze_news_sentiment(self, data: Dict, home_team: str, away_team: str) -> Dict:
+        """Analyze news sentiment"""
+        # Implementation would use NLP to analyze sentiment
+        return {
+            'home_team_sentiment': 0.5,
+            'away_team_sentiment': 0.5,
+            'game_buzz_score': 0.5,
+            'public_betting_sentiment': {
+                'home_team_confidence': 0.5,
+                'away_team_confidence': 0.5,
+                'total_confidence': 0.5
+            },
+            'media_coverage': {
+                'articles_count': 0,
+                'positive_coverage_home': 0.5,
+                'positive_coverage_away': 0.5,
+                'injury_concern_mentions': 0,
+                'revenge_game_narrative': False,
+                'playoff_implications': False
+            },
+            'contrarian_indicator': 0.0
+        }
 
 if __name__ == "__main__":
     # Test the real-time data provider
