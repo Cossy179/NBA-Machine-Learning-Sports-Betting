@@ -5,7 +5,8 @@ Models complex relationships between teams, players, and game dynamics.
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow import keras
+# Import keras from tensorflow for better compatibility
+import tensorflow.keras as keras
 from tensorflow.keras import layers
 import sqlite3
 from datetime import datetime

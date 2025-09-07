@@ -291,10 +291,12 @@ def create_backtest_visualizations(results, model_names, save_plots=True):
     # 1. Profit curves
     ax1.set_title('Cumulative Profit Over Time', fontweight='bold')
     for model_name, result in results.items():
-        if result and 'running_profit' in result:
-            dates = [bet['date'] for bet in result['bet_history']]
-            if dates:
-                ax1.plot(dates, result['running_profit'], label=f"{model_name} (ROI: {result['roi']:.1f}%)", linewidth=2)
+        if result and 'running_profit' in result and 'bet_history' in result:
+            # Use bet history for dates and running totals
+            if result['bet_history']:
+                dates = [bet['date'] for bet in result['bet_history']]
+                running_totals = [bet['running_total'] for bet in result['bet_history']]
+                ax1.plot(dates, running_totals, label=f"{model_name} (ROI: {result['roi']:.1f}%)", linewidth=2)
     
     ax1.set_xlabel('Date')
     ax1.set_ylabel('Cumulative Profit ($)')

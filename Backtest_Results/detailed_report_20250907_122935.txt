@@ -1,0 +1,39 @@
+NBA ML Backtesting Report - 2025-09-07 12:29:35
+======================================================================
+
+AUTO_SELECTED:
+  Accuracy: 66.0%
+  ROI: 76.2%
+  Total Profit: $86,625.42
+  Total Bets: 1137
+  Win Rate: 70.5%
+  Max Drawdown: $569.30
+  Sharpe Ratio: 6.01
+
+ORIGINAL_XGBOOST:
+  Accuracy: 66.0%
+  ROI: 76.2%
+  Total Profit: $86,625.43
+  Total Bets: 1137
+  Win Rate: 70.5%
+  Max Drawdown: $569.30
+  Sharpe Ratio: 6.01
+
+ADVANCED_XGBOOST:
+  Accuracy: 62.9%
+  ROI: 64.3%
+  Total Profit: $76,527.12
+  Total Bets: 1191
+  Win Rate: 66.2%
+  Max Drawdown: $600.00
+  Sharpe Ratio: 4.92
+
+MULTI-TARGET:
+  Accuracy: 57.8%
+  ROI: 36.4%
+  Total Profit: $48,749.66
+  Total Bets: 1338
+  Win Rate: 58.5%
+  Max Drawdown: $923.42
+  Sharpe Ratio: 2.84
+

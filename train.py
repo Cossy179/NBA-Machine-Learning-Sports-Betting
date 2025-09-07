@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-🏀 NBA Machine Learning Sports Betting - Unified Training Script
+NBA Machine Learning Sports Betting - Unified Training Script
 Trains all advanced models with enhanced features and validation.
 """
 import sys
@@ -11,8 +12,15 @@ from datetime import datetime
 import numpy as np
 warnings.filterwarnings('ignore')
 
-# Add src to path
-sys.path.append('src')
+# Add src directories to path once
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(current_dir, 'src')
+process_data_dir = os.path.join(src_dir, 'Process-Data')
+train_models_dir = os.path.join(src_dir, 'Train-Models')
+
+for path in [src_dir, process_data_dir, train_models_dir]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 def print_header():
     """Print training script header"""
@@ -22,13 +30,52 @@ def print_header():
     print(f"⏰ Training started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
+def validate_imports():
+    """Validate that all required modules can be imported"""
+    print("🔍 Validating module imports...")
+    
+    modules_to_check = [
+        ('Enhanced_Features', 'EnhancedFeatureEngine'),
+        ('Ensemble_System', 'EnsembleNBAPredictor'),
+        ('Multi_Target_Predictor', 'MultiTargetNBAPredictor'),
+        ('Advanced_XGBoost_ML', 'AdvancedXGBoostTrainer'),
+        ('Transformer_NBA', 'NBATransformerPredictor'),
+        ('GraphNN_NBA', 'NBAGraphNeuralNetwork'),
+        ('Bayesian_NBA', 'BayesianNBAPredictor'),
+        ('OnlineLearning_NBA', 'OnlineNBAPredictor')
+    ]
+    
+    failed_imports = []
+    
+    for module_name, class_name in modules_to_check:
+        try:
+            module = __import__(module_name)
+            getattr(module, class_name)
+            print(f"  ✅ {module_name}")
+        except ImportError as e:
+            print(f"  ❌ {module_name}: {e}")
+            failed_imports.append(module_name)
+        except AttributeError as e:
+            print(f"  ⚠️ {module_name}: Missing class {class_name}")
+            failed_imports.append(module_name)
+    
+    if failed_imports:
+        print(f"\n⚠️ {len(failed_imports)} modules failed to import:")
+        for module in failed_imports:
+            print(f"  - {module}")
+        print("\nSome training steps may fail. Continuing with available modules...")
+    else:
+        print("✅ All modules imported successfully!")
+    
+    print()
+    return len(failed_imports) == 0
+
 def train_enhanced_features():
     """Train enhanced feature engineering"""
     print("📊 Step 1: Enhanced Feature Engineering")
     print("-" * 50)
     
     try:
-        sys.path.append('src/Process-Data')
         from Enhanced_Features import EnhancedFeatureEngine
         
         enhancer = EnhancedFeatureEngine()
@@ -38,6 +85,9 @@ def train_enhanced_features():
         print(f"✅ Enhanced dataset created with {len(enhanced_df.columns)} total features")
         return True
         
+    except ImportError as e:
+        print(f"❌ Failed to import Enhanced_Features: {e}")
+        return False
     except Exception as e:
         print(f"❌ Enhanced feature engineering failed: {e}")
         return False
@@ -48,7 +98,6 @@ def train_ensemble_models():
     print("-" * 50)
     
     try:
-        sys.path.append('src/Train-Models')
         from Ensemble_System import EnsembleNBAPredictor
         
         print("🔧 Training advanced ensemble system...")
@@ -59,6 +108,9 @@ def train_ensemble_models():
         print("✅ Advanced ensemble models trained successfully")
         return True
         
+    except ImportError as e:
+        print(f"❌ Failed to import Ensemble_System: {e}")
+        return False
     except Exception as e:
         print(f"❌ Ensemble training failed: {e}")
         return False
@@ -69,7 +121,6 @@ def train_multi_target_models():
     print("-" * 50)
     
     try:
-        sys.path.append('src/Train-Models')
         from Multi_Target_Predictor import MultiTargetNBAPredictor
         
         print("🔧 Training multi-target prediction system...")
@@ -79,6 +130,9 @@ def train_multi_target_models():
         print("✅ Multi-target models trained successfully")
         return True
         
+    except ImportError as e:
+        print(f"❌ Failed to import Multi_Target_Predictor: {e}")
+        return False
     except Exception as e:
         print(f"❌ Multi-target training failed: {e}")
         return False
@@ -89,7 +143,6 @@ def train_advanced_xgboost():
     print("-" * 50)
     
     try:
-        sys.path.append('src/Train-Models')
         from Advanced_XGBoost_ML import AdvancedXGBoostTrainer
         
         print("🔧 Training advanced XGBoost with Optuna optimization...")
@@ -100,6 +153,9 @@ def train_advanced_xgboost():
         print("✅ Advanced XGBoost trained successfully")
         return True
         
+    except ImportError as e:
+        print(f"❌ Failed to import Advanced_XGBoost_ML: {e}")
+        return False
     except Exception as e:
         print(f"❌ Advanced XGBoost training failed: {e}")
         return False
@@ -113,7 +169,6 @@ def train_neural_networks():
     
     # Train Transformer model
     try:
-        sys.path.append('src/Train-Models')
         from Transformer_NBA import NBATransformerPredictor
         
         print("🔧 Training Transformer model...")
@@ -124,6 +179,8 @@ def train_neural_networks():
         print(f"✅ Transformer model trained (Accuracy: {results['test_accuracy']:.3f})")
         success_count += 1
         
+    except ImportError as e:
+        print(f"⚠️ Failed to import Transformer_NBA: {e}")
     except Exception as e:
         print(f"⚠️ Transformer training failed: {e}")
     
@@ -139,6 +196,8 @@ def train_neural_networks():
         print(f"✅ Graph NN trained (Accuracy: {results['test_accuracy']:.3f})")
         success_count += 1
         
+    except ImportError as e:
+        print(f"⚠️ Failed to import GraphNN_NBA: {e}")
     except Exception as e:
         print(f"⚠️ Graph NN training failed: {e}")
     
@@ -153,6 +212,8 @@ def train_neural_networks():
         print(f"✅ Bayesian NN trained (Accuracy: {results['accuracy']:.3f})")
         success_count += 1
         
+    except ImportError as e:
+        print(f"⚠️ Failed to import Bayesian_NBA: {e}")
     except Exception as e:
         print(f"⚠️ Bayesian NN training failed: {e}")
     
@@ -170,7 +231,6 @@ def train_online_learning():
         online_predictor = OnlineNBAPredictor()
         
         # Create dummy data to initialize
-        import numpy as np
         X_dummy = np.random.randn(100, 50)
         online_predictor.scaler.fit(X_dummy)
         online_predictor.initialize_online_models(50)
@@ -181,6 +241,9 @@ def train_online_learning():
         print("✅ Online learning system initialized")
         return True
         
+    except ImportError as e:
+        print(f"❌ Failed to import OnlineLearning_NBA: {e}")
+        return False
     except Exception as e:
         print(f"❌ Online learning initialization failed: {e}")
         return False
@@ -196,16 +259,44 @@ def main():
     parser.add_argument('--online', action='store_true', help='Initialize online learning')
     parser.add_argument('--all', action='store_true', help='Train all models')
     parser.add_argument('--quick', action='store_true', help='Quick training (reduced epochs)')
+    parser.add_argument('--dry-run', action='store_true', help='Validate imports and setup without training')
     
     args = parser.parse_args()
     
+    # If no specific arguments provided, default to --all
+    if not any([args.features, args.ensemble, args.multi_target, args.xgboost, 
+                args.neural, args.online, args.all]):
+        args.all = True
+    
     print_header()
     
+    # Validate imports before starting
+    all_imports_valid = validate_imports()
+    
     # Create model directories
-    os.makedirs("Models/Ensemble_Models", exist_ok=True)
-    os.makedirs("Models/XGBoost_Models", exist_ok=True)
-    os.makedirs("Models/NN_Models", exist_ok=True)
-    os.makedirs("Models/Online_Models", exist_ok=True)
+    model_dirs = [
+        "Models/Ensemble_Models",
+        "Models/XGBoost_Models", 
+        "Models/NN_Models",
+        "Models/Online_Models",
+        "Models/Boosted_Models",
+        "Models/Parlay_Models"
+    ]
+    
+    for model_dir in model_dirs:
+        os.makedirs(model_dir, exist_ok=True)
+    
+    # If dry-run, exit after validation
+    if args.dry_run:
+        print("\n🔍 DRY RUN COMPLETE")
+        print("="*50)
+        if all_imports_valid:
+            print("✅ All modules validated successfully!")
+            print("🎯 Ready to run full training with: py train.py --all")
+        else:
+            print("⚠️ Some modules failed validation")
+            print("🔧 Fix import issues before running full training")
+        return all_imports_valid
     
     training_results = {}
     

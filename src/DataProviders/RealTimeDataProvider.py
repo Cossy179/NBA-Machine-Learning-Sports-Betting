@@ -12,14 +12,33 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import configuration manager
+import sys
+import os
+
+# Add the project root to Python path for proper imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Add Utils directory to path as well
+utils_dir = os.path.join(current_dir, '..', 'Utils')
+if utils_dir not in sys.path:
+    sys.path.insert(0, utils_dir)
+
 try:
     from src.Utils.ConfigManager import get_config
 except ImportError:
-    # Fallback if running from different directory
-    import sys
-    import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../Utils'))
-    from ConfigManager import get_config
+    try:
+        from ConfigManager import get_config  # type: ignore
+    except ImportError:
+        # Last resort: direct import
+        import importlib.util
+        config_path = os.path.join(utils_dir, 'ConfigManager.py')
+        spec = importlib.util.spec_from_file_location("ConfigManager", config_path)
+        config_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config_module)
+        get_config = config_module.get_config  # type: ignore
 
 class RealTimeDataProvider:
     def __init__(self):

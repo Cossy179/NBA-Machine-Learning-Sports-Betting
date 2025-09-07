@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from keras import layers
+from keras.optimizers import Adam
 # TensorFlow Probability is optional - using MC Dropout for uncertainty instead
 import sqlite3
 from datetime import datetime
@@ -58,24 +59,24 @@ class BayesianNBAPredictor:
     def create_bayesian_model(self, input_dim):
         """Create Neural Network with MC Dropout for uncertainty"""
         model = keras.Sequential([
-            keras.layers.Input(shape=(input_dim,)),
+            layers.Input(shape=(input_dim,)),
             
             # Dense layers with dropout for uncertainty estimation
-            keras.layers.Dense(128, activation='relu'),
-            keras.layers.Dropout(0.3),  # Keep active during inference
+            layers.Dense(128, activation='relu'),
+            layers.Dropout(0.3),  # Keep active during inference
             
-            keras.layers.Dense(64, activation='relu'),
-            keras.layers.Dropout(0.3),
+            layers.Dense(64, activation='relu'),
+            layers.Dropout(0.3),
             
-            keras.layers.Dense(32, activation='relu'),
-            keras.layers.Dropout(0.2),
+            layers.Dense(32, activation='relu'),
+            layers.Dropout(0.2),
             
             # Output layer
-            keras.layers.Dense(1, activation='sigmoid')
+            layers.Dense(1, activation='sigmoid')
         ])
         
         model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            optimizer=Adam(learning_rate=0.001),
             loss='binary_crossentropy',
             metrics=['accuracy']
         )
