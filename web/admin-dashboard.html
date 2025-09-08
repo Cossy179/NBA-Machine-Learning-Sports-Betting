@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - GoonSteen</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body admin-body">
+    <!-- Sidebar -->
+    <aside class="sidebar admin-sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <i class="fas fa-basketball-ball"></i>
+                <span>GoonSteen</span>
+                <div class="admin-badge">ADMIN</div>
+            </div>
+            <button class="sidebar-toggle" id="sidebarToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <ul class="nav-list">
+                <li class="nav-item active">
+                    <a href="#overview" class="nav-link" data-page="overview">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Overview</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#users" class="nav-link" data-page="users">
+                        <i class="fas fa-users"></i>
+                        <span>User Management</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#activity" class="nav-link" data-page="activity">
+                        <i class="fas fa-activity"></i>
+                        <span>User Activity</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#bets" class="nav-link" data-page="bets">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Betting Analytics</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#models" class="nav-link" data-page="models">
+                        <i class="fas fa-brain"></i>
+                        <span>AI Models</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#system" class="nav-link" data-page="system">
+                        <i class="fas fa-server"></i>
+                        <span>System Health</span>
+                    </a>
+                </li>
+            </ul>
+            
+            <div class="nav-divider"></div>
+            
+            <ul class="nav-list">
+                <li class="nav-item">
+                    <a href="dashboard.html" class="nav-link">
+                        <i class="fas fa-user"></i>
+                        <span>User View</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#settings" class="nav-link" data-page="settings">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar admin-avatar">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+                <div class="user-details">
+                    <div class="user-name">Admin User</div>
+                    <div class="user-status">System Administrator</div>
+                </div>
+            </div>
+            <button class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="dashboard-header admin-header">
+            <div class="header-left">
+                <h1 class="page-title">Admin Overview</h1>
+                <p class="page-subtitle">Monitor and manage the GoonSteen platform</p>
+            </div>
+            <div class="header-right">
+                <div class="header-actions">
+                    <button class="btn btn-outline btn-sm" onclick="exportData()">
+                        <i class="fas fa-download"></i>
+                        Export Data
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="refreshData()">
+                        <i class="fas fa-refresh"></i>
+                        Refresh
+                    </button>
+                </div>
+                <div class="system-status">
+                    <div class="status-indicator online"></div>
+                    <span>System Online</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Admin Dashboard Content -->
+        <div class="dashboard-content" id="adminDashboardContent">
+            <!-- Admin Overview Cards -->
+            <div class="admin-overview-cards">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <div class="card-title">Total Users</div>
+                        <div class="card-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">1,247</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        +12 this week
+                    </div>
+                    <div class="card-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 78%"></div>
+                        </div>
+                        <span>78% active</span>
+                    </div>
+                </div>
+
+                <div class="admin-card">
+                    <div class="card-header">
+                        <div class="card-title">Total Bets</div>
+                        <div class="card-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">15,892</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        +234 today
+                    </div>
+                    <div class="card-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 85%"></div>
+                        </div>
+                        <span>85% win rate</span>
+                    </div>
+                </div>
+
+                <div class="admin-card">
+                    <div class="card-header">
+                        <div class="card-title">Revenue</div>
+                        <div class="card-icon">
+                            <i class="fas fa-dollar-sign"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">$24,650</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        +8.5% this month
+                    </div>
+                    <div class="card-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 92%"></div>
+                        </div>
+                        <span>92% of target</span>
+                    </div>
+                </div>
+
+                <div class="admin-card">
+                    <div class="card-header">
+                        <div class="card-title">Model Accuracy</div>
+                        <div class="card-icon">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">68.9%</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        +2.1% improvement
+                    </div>
+                    <div class="card-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 69%"></div>
+                        </div>
+                        <span>Above benchmark</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Dashboard Grid -->
+            <div class="admin-dashboard-grid">
+                <!-- Recent Users -->
+                <div class="admin-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Recent Users</h2>
+                        <div class="section-actions">
+                            <button class="btn btn-outline btn-sm" onclick="viewAllUsers()">
+                                View All
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="users-table-container">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Status</th>
+                                    <th>Joined</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <div class="user-cell">
+                                            <div class="user-avatar small">JD</div>
+                                            <div class="user-info">
+                                                <div class="user-name">John Doe</div>
+                                                <div class="user-id">#1247</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>john.doe@email.com</td>
+                                    <td><span class="status-badge active">Active</span></td>
+                                    <td>2 hours ago</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn-icon" onclick="viewUser(1247)" title="View User">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="btn-icon" onclick="editUser(1247)" title="Edit User">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <div class="user-cell">
+                                            <div class="user-avatar small">JS</div>
+                                            <div class="user-info">
+                                                <div class="user-name">Jane Smith</div>
+                                                <div class="user-id">#1246</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>jane.smith@email.com</td>
+                                    <td><span class="status-badge premium">Premium</span></td>
+                                    <td>5 hours ago</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn-icon" onclick="viewUser(1246)" title="View User">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="btn-icon" onclick="editUser(1246)" title="Edit User">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <div class="user-cell">
+                                            <div class="user-avatar small">MB</div>
+                                            <div class="user-info">
+                                                <div class="user-name">Mike Brown</div>
+                                                <div class="user-id">#1245</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>mike.brown@email.com</td>
+                                    <td><span class="status-badge suspended">Suspended</span></td>
+                                    <td>1 day ago</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn-icon" onclick="viewUser(1245)" title="View User">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="btn-icon warning" onclick="unsuspendUser(1245)" title="Unsuspend User">
+                                                <i class="fas fa-unlock"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- System Activity -->
+                <div class="admin-section">
+                    <div class="section-header">
+                        <h2 class="section-title">System Activity</h2>
+                        <div class="activity-filter">
+                            <select class="form-select">
+                                <option>All Activity</option>
+                                <option>User Actions</option>
+                                <option>System Events</option>
+                                <option>Errors</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="activity-feed">
+                        <div class="activity-item">
+                            <div class="activity-icon user">
+                                <i class="fas fa-user-plus"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">New user registration</div>
+                                <div class="activity-description">John Doe created an account</div>
+                                <div class="activity-time">2 minutes ago</div>
+                            </div>
+                        </div>
+
+                        <div class="activity-item">
+                            <div class="activity-icon bet">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">High-value bet placed</div>
+                                <div class="activity-description">$500 bet on Lakers vs Warriors</div>
+                                <div class="activity-time">5 minutes ago</div>
+                            </div>
+                        </div>
+
+                        <div class="activity-item">
+                            <div class="activity-icon system">
+                                <i class="fas fa-cog"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">Model update completed</div>
+                                <div class="activity-description">XGBoost model retrained successfully</div>
+                                <div class="activity-time">15 minutes ago</div>
+                            </div>
+                        </div>
+
+                        <div class="activity-item">
+                            <div class="activity-icon warning">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">API rate limit exceeded</div>
+                                <div class="activity-description">User #1234 exceeded rate limit</div>
+                                <div class="activity-time">1 hour ago</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Metrics -->
+                <div class="admin-section chart-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Performance Metrics</h2>
+                        <div class="chart-controls">
+                            <button class="chart-control active" data-metric="users">Users</button>
+                            <button class="chart-control" data-metric="bets">Bets</button>
+                            <button class="chart-control" data-metric="revenue">Revenue</button>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <canvas id="adminMetricsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="admin-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Quick Actions</h2>
+                    </div>
+                    
+                    <div class="quick-actions-grid">
+                        <button class="quick-action-btn" onclick="broadcastMessage()">
+                            <div class="action-icon">
+                                <i class="fas fa-bullhorn"></i>
+                            </div>
+                            <div class="action-content">
+                                <div class="action-title">Broadcast Message</div>
+                                <div class="action-description">Send announcement to all users</div>
+                            </div>
+                        </button>
+
+                        <button class="quick-action-btn" onclick="runModelUpdate()">
+                            <div class="action-icon">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <div class="action-content">
+                                <div class="action-title">Update AI Models</div>
+                                <div class="action-description">Retrain prediction models</div>
+                            </div>
+                        </button>
+
+                        <button class="quick-action-btn" onclick="generateReport()">
+                            <div class="action-icon">
+                                <i class="fas fa-file-alt"></i>
+                            </div>
+                            <div class="action-content">
+                                <div class="action-title">Generate Report</div>
+                                <div class="action-description">Create system performance report</div>
+                            </div>
+                        </button>
+
+                        <button class="quick-action-btn" onclick="manageBackups()">
+                            <div class="action-icon">
+                                <i class="fas fa-database"></i>
+                            </div>
+                            <div class="action-content">
+                                <div class="action-title">Manage Backups</div>
+                                <div class="action-description">View and create system backups</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- System Health -->
+                <div class="admin-section">
+                    <div class="section-header">
+                        <h2 class="section-title">System Health</h2>
+                        <div class="health-status">
+                            <div class="status-indicator online"></div>
+                            <span>All Systems Operational</span>
+                        </div>
+                    </div>
+                    
+                    <div class="health-metrics">
+                        <div class="health-metric">
+                            <div class="metric-header">
+                                <span class="metric-name">Server CPU</span>
+                                <span class="metric-value">23%</span>
+                            </div>
+                            <div class="metric-bar">
+                                <div class="metric-fill good" style="width: 23%"></div>
+                            </div>
+                        </div>
+
+                        <div class="health-metric">
+                            <div class="metric-header">
+                                <span class="metric-name">Memory Usage</span>
+                                <span class="metric-value">67%</span>
+                            </div>
+                            <div class="metric-bar">
+                                <div class="metric-fill warning" style="width: 67%"></div>
+                            </div>
+                        </div>
+
+                        <div class="health-metric">
+                            <div class="metric-header">
+                                <span class="metric-name">Database</span>
+                                <span class="metric-value">12%</span>
+                            </div>
+                            <div class="metric-bar">
+                                <div class="metric-fill good" style="width: 12%"></div>
+                            </div>
+                        </div>
+
+                        <div class="health-metric">
+                            <div class="metric-header">
+                                <span class="metric-name">API Response</span>
+                                <span class="metric-value">156ms</span>
+                            </div>
+                            <div class="metric-bar">
+                                <div class="metric-fill good" style="width: 30%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- User Details Modal -->
+    <div id="userModal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>User Details</h3>
+                <button class="modal-close" onclick="closeModal('userModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="user-details-grid">
+                    <div class="user-info-section">
+                        <h4>Personal Information</h4>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Name</label>
+                                <span id="modalUserName">-</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Email</label>
+                                <span id="modalUserEmail">-</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Status</label>
+                                <span id="modalUserStatus">-</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Joined</label>
+                                <span id="modalUserJoined">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="user-stats-section">
+                        <h4>Betting Statistics</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-value" id="modalUserBets">-</div>
+                                <div class="stat-label">Total Bets</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="modalUserWinRate">-</div>
+                                <div class="stat-label">Win Rate</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="modalUserProfit">-</div>
+                                <div class="stat-label">Total Profit</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('userModal')">Close</button>
+                <button class="btn btn-primary" onclick="editUser()">Edit User</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

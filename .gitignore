@@ -105,3 +105,6 @@ venv.bak/
 
 .idea
 .DS_Store
+
+#ignore web_database.db
+web_database.db

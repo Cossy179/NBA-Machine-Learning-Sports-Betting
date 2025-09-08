@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - GoonSteen</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard-body">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <i class="fas fa-basketball-ball"></i>
+                <span>GoonSteen</span>
+            </div>
+            <button class="sidebar-toggle" id="sidebarToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <ul class="nav-list">
+                <li class="nav-item active">
+                    <a href="#dashboard" class="nav-link" data-page="dashboard">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#predictions" class="nav-link" data-page="predictions">
+                        <i class="fas fa-brain"></i>
+                        <span>AI Predictions</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#parlays" class="nav-link" data-page="parlays">
+                        <i class="fas fa-layer-group"></i>
+                        <span>Parlay Builder</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#analytics" class="nav-link" data-page="analytics">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Analytics</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#history" class="nav-link" data-page="history">
+                        <i class="fas fa-history"></i>
+                        <span>Bet History</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#bankroll" class="nav-link" data-page="bankroll">
+                        <i class="fas fa-wallet"></i>
+                        <span>Bankroll</span>
+                    </a>
+                </li>
+            </ul>
+            
+            <div class="nav-divider"></div>
+            
+            <ul class="nav-list">
+                <li class="nav-item">
+                    <a href="#settings" class="nav-link" data-page="settings">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#help" class="nav-link" data-page="help">
+                        <i class="fas fa-question-circle"></i>
+                        <span>Help & Support</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="user-details">
+                    <div class="user-name">John Doe</div>
+                    <div class="user-status">Premium Member</div>
+                </div>
+            </div>
+            <button class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <h1 class="page-title">Dashboard</h1>
+                <p class="page-subtitle">Welcome back! Here's your betting overview.</p>
+            </div>
+            <div class="header-right">
+                <div class="header-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">Win Rate</div>
+                        <div class="stat-value">68.9%</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">ROI</div>
+                        <div class="stat-value">+15.3%</div>
+                    </div>
+                </div>
+                <button class="notifications-btn">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge">3</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Dashboard Content -->
+        <div class="dashboard-content" id="dashboardContent">
+            <!-- Overview Cards -->
+            <div class="overview-cards">
+                <div class="overview-card">
+                    <div class="card-header">
+                        <div class="card-title">Total Bankroll</div>
+                        <div class="card-icon">
+                            <i class="fas fa-wallet"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">$2,450.00</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        +12.5% this month
+                    </div>
+                </div>
+
+                <div class="overview-card">
+                    <div class="card-header">
+                        <div class="card-title">Active Bets</div>
+                        <div class="card-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">7</div>
+                    <div class="card-change neutral">
+                        <i class="fas fa-clock"></i>
+                        3 pending results
+                    </div>
+                </div>
+
+                <div class="overview-card">
+                    <div class="card-header">
+                        <div class="card-title">This Week</div>
+                        <div class="card-icon">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">5-2</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        71% win rate
+                    </div>
+                </div>
+
+                <div class="overview-card">
+                    <div class="card-header">
+                        <div class="card-title">Profit/Loss</div>
+                        <div class="card-icon">
+                            <i class="fas fa-chart-pie"></i>
+                        </div>
+                    </div>
+                    <div class="card-value">+$340.50</div>
+                    <div class="card-change positive">
+                        <i class="fas fa-arrow-up"></i>
+                        +15.3% ROI
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Dashboard Grid -->
+            <div class="dashboard-grid">
+                <!-- Today's Games -->
+                <div class="dashboard-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Today's Games</h2>
+                        <div class="section-actions">
+                            <button class="btn btn-outline btn-sm">
+                                <i class="fas fa-filter"></i>
+                                Filter
+                            </button>
+                            <button class="btn btn-primary btn-sm">
+                                <i class="fas fa-refresh"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="games-list">
+                        <div class="game-card">
+                            <div class="game-header">
+                                <div class="game-time">7:30 PM EST</div>
+                                <div class="confidence-badge high">89% Confidence</div>
+                            </div>
+                            <div class="game-matchup">
+                                <div class="team away">
+                                    <div class="team-logo">LAL</div>
+                                    <div class="team-info">
+                                        <div class="team-name">Lakers</div>
+                                        <div class="team-record">25-15</div>
+                                    </div>
+                                    <div class="team-odds">-110</div>
+                                </div>
+                                <div class="vs">@</div>
+                                <div class="team home">
+                                    <div class="team-logo">GSW</div>
+                                    <div class="team-info">
+                                        <div class="team-name">Warriors</div>
+                                        <div class="team-record">22-18</div>
+                                    </div>
+                                    <div class="team-odds">+105</div>
+                                </div>
+                            </div>
+                            <div class="game-prediction">
+                                <div class="prediction-result">
+                                    <i class="fas fa-trophy"></i>
+                                    Lakers Win
+                                </div>
+                                <div class="prediction-details">
+                                    <span>Predicted Score: 112-108</span>
+                                    <span>O/U: 220.5 (Over)</span>
+                                </div>
+                            </div>
+                            <div class="game-actions">
+                                <button class="btn btn-outline btn-sm">View Analysis</button>
+                                <button class="btn btn-primary btn-sm">Place Bet</button>
+                            </div>
+                        </div>
+
+                        <div class="game-card">
+                            <div class="game-header">
+                                <div class="game-time">8:00 PM EST</div>
+                                <div class="confidence-badge medium">74% Confidence</div>
+                            </div>
+                            <div class="game-matchup">
+                                <div class="team away">
+                                    <div class="team-logo">BOS</div>
+                                    <div class="team-info">
+                                        <div class="team-name">Celtics</div>
+                                        <div class="team-record">28-12</div>
+                                    </div>
+                                    <div class="team-odds">-125</div>
+                                </div>
+                                <div class="vs">@</div>
+                                <div class="team home">
+                                    <div class="team-logo">MIA</div>
+                                    <div class="team-info">
+                                        <div class="team-name">Heat</div>
+                                        <div class="team-record">20-20</div>
+                                    </div>
+                                    <div class="team-odds">+115</div>
+                                </div>
+                            </div>
+                            <div class="game-prediction">
+                                <div class="prediction-result">
+                                    <i class="fas fa-trophy"></i>
+                                    Celtics Win
+                                </div>
+                                <div class="prediction-details">
+                                    <span>Predicted Score: 118-114</span>
+                                    <span>O/U: 232.5 (Under)</span>
+                                </div>
+                            </div>
+                            <div class="game-actions">
+                                <button class="btn btn-outline btn-sm">View Analysis</button>
+                                <button class="btn btn-primary btn-sm">Place Bet</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="dashboard-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Recent Activity</h2>
+                        <a href="#history" class="section-link">View All</a>
+                    </div>
+                    
+                    <div class="activity-list">
+                        <div class="activity-item">
+                            <div class="activity-icon win">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">Lakers vs Warriors</div>
+                                <div class="activity-description">Lakers -3.5 • Won</div>
+                                <div class="activity-time">2 hours ago</div>
+                            </div>
+                            <div class="activity-amount positive">+$125.00</div>
+                        </div>
+
+                        <div class="activity-item">
+                            <div class="activity-icon loss">
+                                <i class="fas fa-times"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">Celtics vs Heat</div>
+                                <div class="activity-description">Over 225.5 • Lost</div>
+                                <div class="activity-time">5 hours ago</div>
+                            </div>
+                            <div class="activity-amount negative">-$50.00</div>
+                        </div>
+
+                        <div class="activity-item">
+                            <div class="activity-icon pending">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-title">3-Team Parlay</div>
+                                <div class="activity-description">2/3 legs complete • Pending</div>
+                                <div class="activity-time">1 day ago</div>
+                            </div>
+                            <div class="activity-amount pending">$200.00</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Chart -->
+                <div class="dashboard-section chart-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Performance Overview</h2>
+                        <div class="chart-controls">
+                            <button class="chart-control active" data-period="7d">7D</button>
+                            <button class="chart-control" data-period="1m">1M</button>
+                            <button class="chart-control" data-period="3m">3M</button>
+                            <button class="chart-control" data-period="1y">1Y</button>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="dashboard-section stats-section">
+                    <div class="section-header">
+                        <h2 class="section-title">Quick Stats</h2>
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-percentage"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value">68.9%</div>
+                                <div class="stat-label">Overall Win Rate</div>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value">127</div>
+                                <div class="stat-label">Total Bets</div>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-fire"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value">7</div>
+                                <div class="stat-label">Win Streak</div>
+                            </div>
+                        </div>
+
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-star"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-value">4.8</div>
+                                <div class="stat-label">Avg Units Won</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Notification Panel -->
+    <div class="notification-panel" id="notificationPanel">
+        <div class="notification-header">
+            <h3>Notifications</h3>
+            <button class="close-notifications" onclick="closeNotifications()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="notification-list">
+            <div class="notification-item unread">
+                <div class="notification-icon">
+                    <i class="fas fa-trophy"></i>
+                </div>
+                <div class="notification-content">
+                    <div class="notification-title">Bet Won!</div>
+                    <div class="notification-message">Lakers -3.5 just hit! You won $125.</div>
+                    <div class="notification-time">2 minutes ago</div>
+                </div>
+            </div>
+
+            <div class="notification-item unread">
+                <div class="notification-icon">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <div class="notification-content">
+                    <div class="notification-title">New AI Prediction</div>
+                    <div class="notification-message">High confidence pick available for tonight's games.</div>
+                    <div class="notification-time">1 hour ago</div>
+                </div>
+            </div>
+
+            <div class="notification-item">
+                <div class="notification-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="notification-content">
+                    <div class="notification-title">Bankroll Alert</div>
+                    <div class="notification-message">You're approaching your daily betting limit.</div>
+                    <div class="notification-time">3 hours ago</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-nav">
+        <a href="#dashboard" class="mobile-nav-item active" data-page="dashboard">
+            <i class="fas fa-chart-line"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="#predictions" class="mobile-nav-item" data-page="predictions">
+            <i class="fas fa-brain"></i>
+            <span>Predictions</span>
+        </a>
+        <a href="#parlays" class="mobile-nav-item" data-page="parlays">
+            <i class="fas fa-layer-group"></i>
+            <span>Parlays</span>
+        </a>
+        <a href="#history" class="mobile-nav-item" data-page="history">
+            <i class="fas fa-history"></i>
+            <span>History</span>
+        </a>
+    </nav>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
