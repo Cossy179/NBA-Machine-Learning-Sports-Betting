@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit User - GoonSteen Admin</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="admin-body">
+    <div class="edit-user-container">
+        <div class="edit-user-header">
+            <div class="header-left">
+                <a href="admin-dashboard.html" class="back-btn">
+                    <i class="fas fa-arrow-left"></i>
+                    Back to Admin
+                </a>
+                <div class="header-title">
+                    <h1>Edit User</h1>
+                    <p>Modify user account details and settings</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="edit-user-content">
+            <div class="edit-form-section">
+                <form id="editUserForm">
+                    <input type="hidden" id="userId" name="userId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="first_name">First Name</label>
+                            <input type="text" id="first_name" name="first_name" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="last_name">Last Name</label>
+                            <input type="text" id="last_name" name="last_name" class="form-input" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" name="email" class="form-input" required>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="status">Account Status</label>
+                            <select id="status" name="status" class="form-select" required>
+                                <option value="active">Active</option>
+                                <option value="suspended">Suspended</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="subscription_type">Subscription Type</label>
+                            <select id="subscription_type" name="subscription_type" class="form-select" required>
+                                <option value="free">Free</option>
+                                <option value="premium">Premium</option>
+                                <option value="pro">Pro</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-outline" onclick="window.history.back()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/admin.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            initAdminUserEdit();
+        });
+    </script>
+</body>
+</html>

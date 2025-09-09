@@ -84,12 +84,12 @@
         
         <div class="sidebar-footer">
             <div class="user-info">
-                <div class="user-avatar">
+                <div class="user-avatar" id="userAvatar">
                     <i class="fas fa-user"></i>
                 </div>
                 <div class="user-details">
-                    <div class="user-name">John Doe</div>
-                    <div class="user-status">Premium Member</div>
+                    <div class="user-name" id="userName">Loading...</div>
+                    <div class="user-status" id="userStatus">Loading...</div>
                 </div>
             </div>
             <button class="logout-btn" onclick="logout()">
@@ -117,9 +117,9 @@
                         <div class="stat-value">+15.3%</div>
                     </div>
                 </div>
-                <button class="notifications-btn">
+                <button class="notifications-btn" onclick="toggleNotifications()">
                     <i class="fas fa-bell"></i>
-                    <span class="notification-badge">3</span>
+                    <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
                 </button>
             </div>
         </header>
@@ -128,17 +128,17 @@
         <div class="dashboard-content" id="dashboardContent">
             <!-- Overview Cards -->
             <div class="overview-cards">
-                <div class="overview-card">
+                <div class="overview-card bankroll-card" onclick="showBankrollModal()">
                     <div class="card-header">
                         <div class="card-title">Total Bankroll</div>
                         <div class="card-icon">
                             <i class="fas fa-wallet"></i>
                         </div>
                     </div>
-                    <div class="card-value">$2,450.00</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        +12.5% this month
+                    <div class="card-value" id="bankrollValue">$0.00</div>
+                    <div class="card-change positive" id="bankrollChange">
+                        <i class="fas fa-edit"></i>
+                        Click to update
                     </div>
                 </div>
 
@@ -149,10 +149,10 @@
                             <i class="fas fa-chart-line"></i>
                         </div>
                     </div>
-                    <div class="card-value">7</div>
-                    <div class="card-change neutral">
-                        <i class="fas fa-clock"></i>
-                        3 pending results
+                    <div class="card-value" id="activeBetsValue">Loading...</div>
+                    <div class="card-change neutral" id="activeBetsChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                 </div>
 
@@ -163,10 +163,10 @@
                             <i class="fas fa-trophy"></i>
                         </div>
                     </div>
-                    <div class="card-value">5-2</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        71% win rate
+                    <div class="card-value" id="thisWeekValue">Loading...</div>
+                    <div class="card-change neutral" id="thisWeekChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                 </div>
 
@@ -177,10 +177,10 @@
                             <i class="fas fa-chart-pie"></i>
                         </div>
                     </div>
-                    <div class="card-value">+$340.50</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        +15.3% ROI
+                    <div class="card-value" id="profitLossValue">Loading...</div>
+                    <div class="card-change neutral" id="profitLossChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                 </div>
             </div>
@@ -239,8 +239,8 @@
                                 </div>
                             </div>
                             <div class="game-actions">
-                                <button class="btn btn-outline btn-sm">View Analysis</button>
-                                <button class="btn btn-primary btn-sm">Place Bet</button>
+                                <button class="btn btn-outline btn-sm" onclick="viewGameAnalysis('lal-gsw')">View Analysis</button>
+                                <button class="btn btn-primary btn-sm" onclick="placeBet('lal-gsw')">Track Bet</button>
                             </div>
                         </div>
 
@@ -279,8 +279,8 @@
                                 </div>
                             </div>
                             <div class="game-actions">
-                                <button class="btn btn-outline btn-sm">View Analysis</button>
-                                <button class="btn btn-primary btn-sm">Place Bet</button>
+                                <button class="btn btn-outline btn-sm" onclick="viewGameAnalysis('bos-mia')">View Analysis</button>
+                                <button class="btn btn-primary btn-sm" onclick="placeBet('bos-mia')">Track Bet</button>
                             </div>
                         </div>
                     </div>
@@ -293,41 +293,10 @@
                         <a href="#history" class="section-link">View All</a>
                     </div>
                     
-                    <div class="activity-list">
-                        <div class="activity-item">
-                            <div class="activity-icon win">
-                                <i class="fas fa-check"></i>
-                            </div>
-                            <div class="activity-content">
-                                <div class="activity-title">Lakers vs Warriors</div>
-                                <div class="activity-description">Lakers -3.5 • Won</div>
-                                <div class="activity-time">2 hours ago</div>
-                            </div>
-                            <div class="activity-amount positive">+$125.00</div>
-                        </div>
-
-                        <div class="activity-item">
-                            <div class="activity-icon loss">
-                                <i class="fas fa-times"></i>
-                            </div>
-                            <div class="activity-content">
-                                <div class="activity-title">Celtics vs Heat</div>
-                                <div class="activity-description">Over 225.5 • Lost</div>
-                                <div class="activity-time">5 hours ago</div>
-                            </div>
-                            <div class="activity-amount negative">-$50.00</div>
-                        </div>
-
-                        <div class="activity-item">
-                            <div class="activity-icon pending">
-                                <i class="fas fa-clock"></i>
-                            </div>
-                            <div class="activity-content">
-                                <div class="activity-title">3-Team Parlay</div>
-                                <div class="activity-description">2/3 legs complete • Pending</div>
-                                <div class="activity-time">1 day ago</div>
-                            </div>
-                            <div class="activity-amount pending">$200.00</div>
+                    <div class="activity-list" id="activityList">
+                        <div class="loading-message">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            Loading recent activity...
                         </div>
                     </div>
                 </div>
@@ -409,38 +378,132 @@
                 <i class="fas fa-times"></i>
             </button>
         </div>
-        <div class="notification-list">
-            <div class="notification-item unread">
-                <div class="notification-icon">
-                    <i class="fas fa-trophy"></i>
-                </div>
-                <div class="notification-content">
-                    <div class="notification-title">Bet Won!</div>
-                    <div class="notification-message">Lakers -3.5 just hit! You won $125.</div>
-                    <div class="notification-time">2 minutes ago</div>
-                </div>
+        <div class="notification-list" id="notificationList">
+            <div class="empty-notifications">
+                <i class="fas fa-bell-slash"></i>
+                <p>No notifications yet</p>
             </div>
+        </div>
+    </div>
 
-            <div class="notification-item unread">
-                <div class="notification-icon">
-                    <i class="fas fa-brain"></i>
-                </div>
-                <div class="notification-content">
-                    <div class="notification-title">New AI Prediction</div>
-                    <div class="notification-message">High confidence pick available for tonight's games.</div>
-                    <div class="notification-time">1 hour ago</div>
-                </div>
+    <!-- Bankroll Management Modal -->
+    <div id="bankrollModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Update Bankroll</h3>
+                <button class="modal-close" onclick="closeModal('bankrollModal')">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
+            <div class="modal-body">
+                <form id="bankrollForm">
+                    <div class="form-group">
+                        <label for="currentBalance">Current Account Balance</label>
+                        <div class="input-wrapper">
+                            <span class="input-prefix">$</span>
+                            <input 
+                                type="number" 
+                                id="currentBalance" 
+                                name="currentBalance" 
+                                step="0.01" 
+                                min="0" 
+                                placeholder="0.00"
+                                class="form-input"
+                                required
+                            >
+                        </div>
+                        <div class="input-hint">Enter your current sportsbook account balance</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="betLimit">Daily Betting Limit</label>
+                        <div class="input-wrapper">
+                            <span class="input-prefix">$</span>
+                            <input 
+                                type="number" 
+                                id="betLimit" 
+                                name="betLimit" 
+                                step="0.01" 
+                                min="1" 
+                                placeholder="100.00"
+                                class="form-input"
+                            >
+                        </div>
+                        <div class="input-hint">Set your daily betting limit for risk management</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('bankrollModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="updateBankroll()">Update Bankroll</button>
+            </div>
+        </div>
+    </div>
 
-            <div class="notification-item">
-                <div class="notification-icon">
-                    <i class="fas fa-exclamation-triangle"></i>
-                </div>
-                <div class="notification-content">
-                    <div class="notification-title">Bankroll Alert</div>
-                    <div class="notification-message">You're approaching your daily betting limit.</div>
-                    <div class="notification-time">3 hours ago</div>
-                </div>
+    <!-- Bet Tracking Modal -->
+    <div id="betTrackingModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Track Your Bet</h3>
+                <button class="modal-close" onclick="closeModal('betTrackingModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="betTrackingForm">
+                    <input type="hidden" id="gameId" name="gameId">
+                    
+                    <div class="form-group">
+                        <label for="betAmount">Bet Amount</label>
+                        <div class="input-wrapper">
+                            <span class="input-prefix">$</span>
+                            <input 
+                                type="number" 
+                                id="betAmount" 
+                                name="betAmount" 
+                                step="0.01" 
+                                min="0.01" 
+                                placeholder="0.00"
+                                class="form-input"
+                                required
+                            >
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="betType">Bet Type</label>
+                        <select id="betType" name="betType" class="form-select" required>
+                            <option value="">Select Bet Type</option>
+                            <option value="moneyline">Moneyline</option>
+                            <option value="spread">Point Spread</option>
+                            <option value="total">Over/Under</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="odds">Odds</label>
+                        <input 
+                            type="text" 
+                            id="odds" 
+                            name="odds" 
+                            placeholder="-110"
+                            class="form-input"
+                            required
+                        >
+                    </div>
+                    
+                    <div class="kelly-suggestion" id="kellySuggestion" style="display: none;">
+                        <div class="suggestion-header">
+                            <i class="fas fa-calculator"></i>
+                            Kelly Criterion Suggestion
+                        </div>
+                        <div class="suggestion-amount">Recommended: $<span id="kellyAmount">0.00</span></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('betTrackingModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="trackBet()">Track Bet</button>
             </div>
         </div>
     </div>

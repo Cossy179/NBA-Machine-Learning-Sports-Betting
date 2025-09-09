@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Test - GoonSteen</title>
+</head>
+<body>
+    <h1>Authentication Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        function getAuthToken() {
+            return localStorage.getItem('auth_token');
+        }
+        
+        function getUserData() {
+            const userData = localStorage.getItem('user_data');
+            return userData ? JSON.parse(userData) : null;
+        }
+        
+        async function testAuth() {
+            const token = getAuthToken();
+            const userData = getUserData();
+            
+            document.getElementById('results').innerHTML = `
+                <h2>Auth Status:</h2>
+                <p><strong>Token exists:</strong> ${!!token}</p>
+                <p><strong>Token:</strong> ${token ? token.substring(0, 20) + '...' : 'None'}</p>
+                <p><strong>User data:</strong> ${userData ? JSON.stringify(userData, null, 2) : 'None'}</p>
+                
+                <h2>API Test:</h2>
+                <div id="apiResults">Testing...</div>
+            `;
+            
+            if (token) {
+                try {
+                    const response = await fetch('/api/session', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    document.getElementById('apiResults').innerHTML = `
+                        <p><strong>API Response Status:</strong> ${response.status}</p>
+                        <p><strong>API Response:</strong> <pre>${JSON.stringify(data, null, 2)}</pre></p>
+                    `;
+                } catch (error) {
+                    document.getElementById('apiResults').innerHTML = `
+                        <p><strong>API Error:</strong> ${error.message}</p>
+                    `;
+                }
+            }
+        }
+        
+        testAuth();
+    </script>
+</body>
+</html>

@@ -721,6 +721,86 @@ function editUser(userId) {
     window.location.href = `admin-user-edit.html?id=${userId}`;
 }
 
+// Admin User Edit Page Logic
+function getQueryParam(name) {
+    const url = new URL(window.location.href);
+    return url.searchParams.get(name);
+}
+
+async function fetchJson(url, options = {}) {
+    const token = localStorage.getItem('auth_token');
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    } else if (!options.allowUnauthed) {
+        // No token and unauthenticated not allowed: bounce to login gracefully
+        window.location.href = 'login.html';
+        throw new Error('No authentication token');
+    }
+    const res = await fetch(url, Object.assign({}, options, { headers }));
+    if (!res.ok) throw new Error((await res.text()) || 'Request failed');
+    return res.json();
+}
+
+async function initAdminUserEdit() {
+    const id = getQueryParam('id');
+    if (!id) {
+        alert('Missing user id');
+        window.location.href = 'admin-dashboard.html';
+        return;
+    }
+
+    // Populate form
+    try {
+        const user = await fetchJson(`/api/admin/users/${id}`);
+        document.getElementById('userId').value = user.id;
+        document.getElementById('first_name').value = user.first_name || '';
+        document.getElementById('last_name').value = user.last_name || '';
+        document.getElementById('email').value = user.email || '';
+        document.getElementById('status').value = user.status || 'active';
+        document.getElementById('subscription_type').value = user.subscription_type || 'free';
+    } catch (e) {
+        console.error(e);
+        alert('Failed to load user');
+        window.location.href = 'admin-dashboard.html';
+        return;
+    }
+
+    // Submit handler
+    const form = document.getElementById('editUserForm');
+    form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const payload = {
+            first_name: document.getElementById('first_name').value.trim(),
+            last_name: document.getElementById('last_name').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            status: document.getElementById('status').value,
+            subscription_type: document.getElementById('subscription_type').value
+        };
+        const uid = document.getElementById('userId').value;
+        try {
+            await fetchJson(`/api/admin/users/${uid}`, { method: 'PUT', body: JSON.stringify(payload) });
+            alert('User updated');
+            window.location.href = 'admin-dashboard.html';
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save user');
+        }
+    });
+}
+
+// expose init for html
+window.initAdminUserEdit = initAdminUserEdit;
+
+// Safe logout without requiring token
+function logout() {
+    clearAuthData();
+    fetchJson('/api/logout', { method: 'POST', allowUnauthed: true })
+        .finally(() => { window.location.href = 'login.html'; });
+}
+
+window.logout = logout;
+
 async function suspendUser(userId) {
     if (!confirm('Are you sure you want to suspend this user?')) return;
     

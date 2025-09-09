@@ -183,6 +183,28 @@ def validate_username(username: str) -> bool:
     pattern = r'^[a-zA-Z0-9_]{3,20}$'
     return re.match(pattern, username) is not None
 
+def _parse_birth_date(value: str) -> Optional[datetime]:
+    """Parse flexible birth date inputs coming from different browsers/locales.
+    Accepts: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, YYYY. Returns datetime or None.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    # Try common formats
+    fmts = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']
+    for fmt in fmts:
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    # Accept year-only input
+    if len(value) == 4 and value.isdigit():
+        try:
+            return datetime(int(value), 1, 1)
+        except ValueError:
+            return None
+    return None
+
 # Route handlers
 @app.route('/')
 def index():
@@ -199,6 +221,15 @@ def serve_static(path):
 def health_check():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'message': 'GoonSteen API is running'})
+
+# Optional: stub WebSocket endpoints (HTTP 404s were showing in console)
+@app.route('/ws/dashboard')
+def ws_dashboard_stub():
+    return jsonify({'message': 'WebSocket not implemented'}), 501
+
+@app.route('/ws/admin')
+def ws_admin_stub():
+    return jsonify({'message': 'WebSocket not implemented'}), 501
 
 # Authentication endpoints
 @app.route('/api/signup', methods=['POST'])
@@ -221,14 +252,14 @@ def signup():
         return jsonify({'error': 'Username must be 3-20 characters, letters and numbers only'}), 400
     
     # Check age verification (must be 18+)
-    try:
-        birth_date = datetime.strptime(data['age_verification'], '%Y-%m-%d').date()
-        today = datetime.now().date()
-        age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
-        if age < 18:
-            return jsonify({'error': 'You must be 18 or older to register'}), 400
-    except ValueError:
+    birth_dt = _parse_birth_date(data.get('age_verification'))
+    if not birth_dt:
         return jsonify({'error': 'Invalid birth date format'}), 400
+    birth_date = birth_dt.date()
+    today = datetime.now().date()
+    age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    if age < 18:
+        return jsonify({'error': 'You must be 18 or older to register'}), 400
     
     # Check if user already exists
     existing_user = query_db('SELECT id FROM users WHERE username = ? OR email = ?', 
@@ -247,7 +278,7 @@ def signup():
                 terms_accepted, marketing_emails, responsible_gambling)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             [data['username'], data['email'], password_hash, salt,
-             data['first_name'], data['last_name'], data['age_verification'],
+             data['first_name'], data['last_name'], birth_date.isoformat(),
              data.get('terms_accepted', False), data.get('marketing_emails', False),
              data.get('responsible_gambling', False)]
         )
@@ -490,35 +521,308 @@ def dashboard_activity():
     """Get recent user activity"""
     user_id = g.current_user['id']
     
+    # Get real user activity from bets and user_activity tables
     activities = query_db('''
         SELECT 
             'bet' as type,
-            'Lakers vs Warriors' as title,
-            'Lakers -3.5 • Won' as description,
-            datetime('now', '-2 hours') as timestamp,
-            125.00 as amount,
-            'won' as status
+            CASE 
+                WHEN b.status = 'won' THEN 'Bet Won'
+                WHEN b.status = 'lost' THEN 'Bet Lost'
+                WHEN b.status = 'pending' THEN 'Bet Pending'
+                ELSE 'Bet Placed'
+            END as title,
+            CASE 
+                WHEN json_extract(b.bet_details, '$.bet_type') IS NOT NULL 
+                THEN json_extract(b.bet_details, '$.bet_type') || ' • ' || b.status
+                ELSE b.bet_type || ' • ' || b.status
+            END as description,
+            b.placed_at as timestamp,
+            CASE 
+                WHEN b.status = 'won' THEN b.actual_payout - b.stake
+                WHEN b.status = 'lost' THEN -b.stake
+                ELSE b.stake
+            END as amount,
+            b.status
+        FROM bets b
+        WHERE b.user_id = ?
+        
         UNION ALL
+        
         SELECT 
-            'bet' as type,
-            'Celtics vs Heat' as title,
-            'Over 225.5 • Lost' as description,
-            datetime('now', '-5 hours') as timestamp,
-            -50.00 as amount,
-            'lost' as status
-        UNION ALL
-        SELECT 
-            'bet' as type,
-            '3-Team Parlay' as title,
-            '2/3 legs complete • Pending' as description,
-            datetime('now', '-1 day') as timestamp,
-            200.00 as amount,
-            'pending' as status
+            ua.activity_type as type,
+            CASE 
+                WHEN ua.activity_type = 'bankroll_updated' THEN 'Bankroll Updated'
+                WHEN ua.activity_type = 'login_success' THEN 'Login'
+                WHEN ua.activity_type = 'profile_updated' THEN 'Profile Updated'
+                ELSE ua.activity_type
+            END as title,
+            ua.description,
+            ua.created_at as timestamp,
+            0 as amount,
+            'info' as status
+        FROM user_activity ua
+        WHERE ua.user_id = ? 
+        AND ua.activity_type IN ('bankroll_updated', 'profile_updated')
+        
         ORDER BY timestamp DESC
         LIMIT 10
-    ''')
+    ''', [user_id, user_id])
     
     return jsonify([dict(activity) for activity in activities])
+
+# User endpoints
+@app.route('/api/user/profile', methods=['GET'])
+@login_required
+def user_profile():
+    """Get user profile data"""
+    user_id = g.current_user['id']
+    
+    # Get user info with bankroll
+    user_data = query_db('''
+        SELECT 
+            u.*, 
+            b.total_balance, b.available_balance, b.daily_limit, b.total_profit_loss
+        FROM users u
+        LEFT JOIN bankrolls b ON u.id = b.user_id
+        WHERE u.id = ?
+    ''', [user_id], one=True)
+    
+    if user_data:
+        return jsonify(dict(user_data))
+    else:
+        return jsonify({'error': 'User not found'}), 404
+
+@app.route('/api/user/bankroll', methods=['GET', 'POST'])
+@login_required
+def user_bankroll():
+    """Get or update user bankroll"""
+    user_id = g.current_user['id']
+    
+    if request.method == 'GET':
+        bankroll = query_db('SELECT * FROM bankrolls WHERE user_id = ?', [user_id], one=True)
+        if bankroll:
+            return jsonify(dict(bankroll))
+        else:
+            # Create initial bankroll
+            execute_db(
+                'INSERT INTO bankrolls (user_id, total_balance, available_balance) VALUES (?, 0.00, 0.00)',
+                [user_id]
+            )
+            return jsonify({
+                'user_id': user_id,
+                'total_balance': 0.00,
+                'available_balance': 0.00,
+                'daily_limit': 100.00
+            })
+    
+    elif request.method == 'POST':
+        data = request.get_json()
+        total_balance = data.get('total_balance', 0)
+        daily_limit = data.get('daily_limit', 100)
+        
+        try:
+            # Update or insert bankroll
+            existing = query_db('SELECT id FROM bankrolls WHERE user_id = ?', [user_id], one=True)
+            
+            if existing:
+                execute_db('''
+                    UPDATE bankrolls SET 
+                        total_balance = ?, available_balance = ?, daily_limit = ?, updated_at = ?
+                    WHERE user_id = ?
+                ''', [total_balance, total_balance, daily_limit, datetime.now(timezone.utc).isoformat(), user_id])
+            else:
+                execute_db('''
+                    INSERT INTO bankrolls (user_id, total_balance, available_balance, daily_limit)
+                    VALUES (?, ?, ?, ?)
+                ''', [user_id, total_balance, total_balance, daily_limit])
+            
+            # Log the bankroll update
+            log_user_activity(user_id, 'bankroll_updated', f'Bankroll updated to ${total_balance}')
+            
+            return jsonify({'message': 'Bankroll updated successfully'})
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error updating bankroll: {e}")
+            return jsonify({'error': 'Failed to update bankroll'}), 500
+
+@app.route('/api/user/track-bet', methods=['POST'])
+@login_required
+def track_bet():
+    """Track a user's bet"""
+    user_id = g.current_user['id']
+    data = request.get_json()
+    
+    game_id = data.get('game_id')
+    bet_amount = data.get('bet_amount')
+    bet_type = data.get('bet_type')
+    odds = data.get('odds')
+    
+    if not all([game_id, bet_amount, bet_type, odds]):
+        return jsonify({'error': 'All fields are required'}), 400
+    
+    try:
+        # Parse odds to calculate potential payout
+        if odds.startswith('+'):
+            decimal_odds = (float(odds[1:]) / 100) + 1
+        elif odds.startswith('-'):
+            decimal_odds = (100 / float(odds[1:])) + 1
+        else:
+            decimal_odds = float(odds)
+        
+        potential_payout = bet_amount * decimal_odds
+        
+        # Create bet record
+        bet_id = execute_db('''
+            INSERT INTO bets (
+                user_id, game_id, bet_type, status, stake, potential_payout, 
+                odds, bet_details, placed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            user_id, game_id, 'single', 'pending', bet_amount, potential_payout,
+            decimal_odds, json.dumps({'bet_type': bet_type, 'odds_display': odds}),
+            datetime.now(timezone.utc).isoformat()
+        ])
+        
+        # Log the bet
+        log_user_activity(user_id, 'bet_tracked', f'Tracked ${bet_amount} bet on game {game_id}')
+        
+        return jsonify({
+            'message': 'Bet tracked successfully',
+            'bet_id': bet_id,
+            'potential_payout': potential_payout
+        })
+        
+    except (ValueError, sqlite3.Error) as e:
+        logger.error(f"Error tracking bet: {e}")
+        return jsonify({'error': 'Failed to track bet'}), 500
+
+@app.route('/api/calculate-kelly', methods=['POST'])
+@login_required
+def calculate_kelly():
+    """Calculate Kelly Criterion suggestion"""
+    user_id = g.current_user['id']
+    data = request.get_json()
+    
+    game_id = data.get('game_id')
+    bet_amount = data.get('bet_amount')
+    odds = data.get('odds')
+    
+    try:
+        # Get prediction confidence for the game
+        prediction = query_db('''
+            SELECT confidence, probability 
+            FROM predictions 
+            WHERE game_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        ''', [game_id], one=True)
+        
+        if not prediction:
+            return jsonify({'kelly_amount': 0, 'message': 'No prediction available'})
+        
+        # Get user bankroll
+        bankroll = query_db('SELECT total_balance FROM bankrolls WHERE user_id = ?', [user_id], one=True)
+        total_bankroll = bankroll['total_balance'] if bankroll else 1000
+        
+        # Parse odds
+        if odds.startswith('+'):
+            decimal_odds = (float(odds[1:]) / 100) + 1
+        elif odds.startswith('-'):
+            decimal_odds = (100 / float(odds[1:])) + 1
+        else:
+            decimal_odds = float(odds)
+        
+        # Kelly Criterion calculation
+        # Kelly% = (bp - q) / b
+        # where b = decimal odds - 1, p = probability of winning, q = probability of losing
+        win_probability = prediction['confidence'] / 100
+        lose_probability = 1 - win_probability
+        b = decimal_odds - 1
+        
+        kelly_percentage = (b * win_probability - lose_probability) / b
+        kelly_amount = max(0, kelly_percentage * total_bankroll)
+        
+        # Cap at 5% of bankroll for safety
+        kelly_amount = min(kelly_amount, total_bankroll * 0.05)
+        
+        return jsonify({
+            'kelly_amount': round(kelly_amount, 2),
+            'kelly_percentage': round(kelly_percentage * 100, 2),
+            'confidence': prediction['confidence']
+        })
+        
+    except (ValueError, sqlite3.Error) as e:
+        logger.error(f"Error calculating Kelly: {e}")
+        return jsonify({'kelly_amount': 0, 'error': 'Calculation failed'})
+
+@app.route('/api/user/analytics', methods=['GET'])
+@login_required
+def user_analytics():
+    """Get user analytics data"""
+    user_id = g.current_user['id']
+    
+    analytics = query_db('''
+        SELECT 
+            COUNT(*) as total_bets,
+            AVG(stake) as avg_bet,
+            AVG(CASE WHEN status IN ('won', 'lost') THEN 
+                CASE WHEN status = 'won' THEN 1.0 ELSE 0.0 END 
+            END) * 100 as win_rate,
+            MAX(
+                CASE WHEN status = 'won' THEN 
+                    ROW_NUMBER() OVER (PARTITION BY status ORDER BY placed_at) 
+                ELSE 0 END
+            ) as best_streak
+        FROM bets 
+        WHERE user_id = ?
+    ''', [user_id], one=True)
+    
+    return jsonify({
+        'total_bets': analytics['total_bets'] or 0,
+        'avg_bet': float(analytics['avg_bet'] or 0),
+        'win_rate': round(analytics['win_rate'] or 0, 1),
+        'best_streak': analytics['best_streak'] or 0
+    })
+
+@app.route('/api/user/betting-history', methods=['GET'])
+@login_required
+def user_betting_history():
+    """Get user betting history"""
+    user_id = g.current_user['id']
+    limit = request.args.get('limit', 50, type=int)
+    status_filter = request.args.get('status', '')
+    period = request.args.get('period', 'all')
+    
+    # Build query with filters
+    where_clauses = ['user_id = ?']
+    params = [user_id]
+    
+    if status_filter:
+        where_clauses.append('status = ?')
+        params.append(status_filter)
+    
+    if period != 'all':
+        if period == '7d':
+            where_clauses.append('placed_at >= date("now", "-7 days")')
+        elif period == '30d':
+            where_clauses.append('placed_at >= date("now", "-30 days")')
+        elif period == '90d':
+            where_clauses.append('placed_at >= date("now", "-90 days")')
+    
+    where_clause = ' AND '.join(where_clauses)
+    
+    bets = query_db(f'''
+        SELECT 
+            b.*, 
+            json_extract(b.bet_details, '$.bet_type') as bet_type_detail,
+            json_extract(b.bet_details, '$.odds_display') as odds_display
+        FROM bets b
+        WHERE {where_clause}
+        ORDER BY b.placed_at DESC
+        LIMIT ?
+    ''', params + [limit])
+    
+    return jsonify([dict(bet) for bet in bets])
 
 # Admin endpoints
 @app.route('/api/admin/overview', methods=['GET'])
@@ -615,6 +919,31 @@ def admin_get_user(user_id):
     user_dict.update(dict(stats) if stats else {})
     
     return jsonify(user_dict)
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@login_required
+@admin_required
+def admin_update_user(user_id):
+    """Update user details (admin)"""
+    data = request.get_json() or {}
+    allowed_fields = ['first_name', 'last_name', 'email', 'status', 'subscription_type']
+    fields = []
+    params = []
+    for key in allowed_fields:
+        if key in data:
+            fields.append(f"{key} = ?")
+            params.append(data[key])
+    if not fields:
+        return jsonify({'error': 'No valid fields provided'}), 400
+    params.append(user_id)
+    try:
+        execute_db(f"UPDATE users SET {', '.join(fields)}, updated_at = ? WHERE id = ?",
+                   params[:-1] + [datetime.now(timezone.utc).isoformat(), params[-1]])
+        log_user_activity(user_id, 'user_updated', f'User updated by admin {g.current_user["username"]}')
+        return jsonify({'message': 'User updated successfully'})
+    except sqlite3.Error as e:
+        logger.error(f"Error updating user {user_id}: {e}")
+        return jsonify({'error': 'Failed to update user'}), 500
 
 @app.route('/api/admin/users/<int:user_id>/suspend', methods=['POST'])
 @login_required
