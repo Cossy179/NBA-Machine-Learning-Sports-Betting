@@ -939,6 +939,254 @@ def admin_model_performance():
     
     return jsonify(model_data)
 
+@app.route('/api/admin/detailed-activity', methods=['GET'])
+@login_required
+@admin_required
+def admin_detailed_activity():
+    """Get detailed system activity for admin"""
+    activity_type = request.args.get('type', '')
+    limit = request.args.get('limit', 100, type=int)
+    
+    where_clause = 'WHERE ua.activity_type = ?' if activity_type else ''
+    params = [activity_type] if activity_type else []
+    
+    activities = query_db(f'''
+        SELECT 
+            ua.activity_type, ua.description, ua.created_at, ua.ip_address,
+            u.username, u.first_name, u.last_name
+        FROM user_activity ua
+        LEFT JOIN users u ON ua.user_id = u.id
+        {where_clause}
+        ORDER BY ua.created_at DESC 
+        LIMIT ?
+    ''', params + [limit])
+    
+    return jsonify([dict(activity) for activity in activities])
+
+@app.route('/api/admin/betting-analytics', methods=['GET'])
+@login_required
+@admin_required
+def admin_betting_analytics():
+    """Get betting analytics for admin"""
+    analytics = query_db('''
+        SELECT 
+            SUM(stake) as total_volume,
+            AVG(stake) as avg_stake,
+            COUNT(*) as total_bets,
+            AVG(CASE WHEN status IN ('won', 'lost') THEN 
+                CASE WHEN status = 'won' THEN 1.0 ELSE 0.0 END 
+            END) * 100 as win_rate,
+            SUM(CASE WHEN status = 'won' THEN actual_payout - stake 
+                     WHEN status = 'lost' THEN -stake 
+                     ELSE 0 END) as total_profit,
+            SUM(stake) as total_stakes
+        FROM bets
+    ''', one=True)
+    
+    profit_margin = 0
+    if analytics['total_stakes'] and analytics['total_stakes'] > 0:
+        profit_margin = (analytics['total_profit'] or 0) / analytics['total_stakes'] * 100
+    
+    return jsonify({
+        'total_volume': float(analytics['total_volume'] or 0),
+        'avg_stake': float(analytics['avg_stake'] or 0),
+        'win_rate': round(analytics['win_rate'] or 0, 1),
+        'profit_margin': round(profit_margin, 1),
+        'total_bets': analytics['total_bets'] or 0
+    })
+
+@app.route('/api/admin/recent-bets', methods=['GET'])
+@login_required
+@admin_required
+def admin_recent_bets():
+    """Get recent bets for admin"""
+    limit = request.args.get('limit', 50, type=int)
+    
+    bets = query_db('''
+        SELECT 
+            b.id, b.bet_type, b.stake, b.odds, b.status, b.actual_payout, b.placed_at,
+            u.username, u.first_name, u.last_name
+        FROM bets b
+        JOIN users u ON b.user_id = u.id
+        ORDER BY b.placed_at DESC
+        LIMIT ?
+    ''', [limit])
+    
+    return jsonify([dict(bet) for bet in bets])
+
+@app.route('/api/admin/settings', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def admin_settings():
+    """Get or update admin settings"""
+    if request.method == 'GET':
+        # Get current settings
+        settings = query_db('SELECT setting_key, setting_value FROM system_settings')
+        settings_dict = {setting['setting_key']: setting['setting_value'] for setting in settings}
+        
+        # Add default values for missing settings
+        defaults = {
+            'maxLoginAttempts': '5',
+            'sessionTimeout': '1440',
+            'passwordMinLength': '8',
+            'defaultBankroll': '1000.00',
+            'minBetAmount': '1.00',
+            'maxBetAmount': '1000.00',
+            'modelUpdateFreq': '24',
+            'confidenceThreshold': '60',
+            'kellyEnabled': 'true'
+        }
+        
+        for key, default_value in defaults.items():
+            if key not in settings_dict:
+                settings_dict[key] = default_value
+        
+        return jsonify(settings_dict)
+    
+    elif request.method == 'POST':
+        # Update settings
+        data = request.get_json()
+        
+        try:
+            for key, value in data.items():
+                # Convert boolean to string for storage
+                if isinstance(value, bool):
+                    value = 'true' if value else 'false'
+                
+                # Update or insert setting
+                existing = query_db('SELECT id FROM system_settings WHERE setting_key = ?', [key], one=True)
+                
+                if existing:
+                    execute_db(
+                        'UPDATE system_settings SET setting_value = ?, updated_at = ? WHERE setting_key = ?',
+                        [str(value), datetime.now(timezone.utc).isoformat(), key]
+                    )
+                else:
+                    execute_db(
+                        'INSERT INTO system_settings (setting_key, setting_value, setting_type) VALUES (?, ?, ?)',
+                        [key, str(value), 'string']
+                    )
+            
+            log_user_activity(g.current_user['id'], 'settings_updated', 'Admin updated system settings')
+            return jsonify({'message': 'Settings updated successfully'})
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error updating settings: {e}")
+            return jsonify({'error': 'Failed to update settings'}), 500
+
+@app.route('/api/admin/cleanup', methods=['POST'])
+@login_required
+@admin_required
+def admin_cleanup():
+    """Cleanup old data"""
+    try:
+        # Clean up old sessions (older than 7 days)
+        execute_db('DELETE FROM user_sessions WHERE expires_at < datetime("now", "-7 days")')
+        
+        # Clean up old logs (older than 30 days)
+        execute_db('DELETE FROM system_logs WHERE created_at < datetime("now", "-30 days")')
+        
+        # Clean up old API usage data (older than 90 days)
+        execute_db('DELETE FROM api_usage WHERE created_at < datetime("now", "-90 days")')
+        
+        # Clean up old activity logs (older than 180 days)
+        execute_db('DELETE FROM user_activity WHERE created_at < datetime("now", "-180 days")')
+        
+        log_user_activity(g.current_user['id'], 'data_cleanup', 'Admin performed data cleanup')
+        logger.info(f"Data cleanup performed by admin {g.current_user['id']}")
+        
+        return jsonify({'message': 'Old data cleaned up successfully'})
+        
+    except sqlite3.Error as e:
+        logger.error(f"Error during cleanup: {e}")
+        return jsonify({'error': 'Failed to cleanup old data'}), 500
+
+@app.route('/api/admin/optimize-db', methods=['POST'])
+@login_required
+@admin_required
+def admin_optimize_db():
+    """Optimize database"""
+    try:
+        db = get_db()
+        
+        # Run VACUUM to optimize database
+        db.execute('VACUUM')
+        
+        # Analyze tables for better query planning
+        db.execute('ANALYZE')
+        
+        db.commit()
+        
+        log_user_activity(g.current_user['id'], 'db_optimized', 'Admin optimized database')
+        logger.info(f"Database optimized by admin {g.current_user['id']}")
+        
+        return jsonify({'message': 'Database optimized successfully'})
+        
+    except sqlite3.Error as e:
+        logger.error(f"Error optimizing database: {e}")
+        return jsonify({'error': 'Failed to optimize database'}), 500
+
+@app.route('/api/admin/backup', methods=['GET'])
+@login_required
+@admin_required
+def admin_backup():
+    """Create database backup"""
+    try:
+        import shutil
+        from flask import send_file
+        
+        # Create backup filename
+        backup_filename = f'goonsteen_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.db'
+        backup_path = f'/tmp/{backup_filename}' if os.name != 'nt' else f'C:\\temp\\{backup_filename}'
+        
+        # Create backup
+        shutil.copy2(app.config['DATABASE'], backup_path)
+        
+        log_user_activity(g.current_user['id'], 'db_backup', 'Admin created database backup')
+        logger.info(f"Database backup created by admin {g.current_user['id']}")
+        
+        return send_file(backup_path, as_attachment=True, download_name=backup_filename)
+        
+    except Exception as e:
+        logger.error(f"Error creating backup: {e}")
+        return jsonify({'error': 'Failed to create backup'}), 500
+
+@app.route('/api/admin/broadcast', methods=['POST'])
+@login_required
+@admin_required
+def admin_broadcast():
+    """Send broadcast message to all users"""
+    data = request.get_json()
+    
+    title = data.get('title')
+    content = data.get('content')
+    message_type = data.get('type', 'info')
+    
+    if not title or not content:
+        return jsonify({'error': 'Title and content are required'}), 400
+    
+    try:
+        # Get all active users
+        users = query_db('SELECT id FROM users WHERE status = "active"')
+        
+        # Create notification for each user
+        for user in users:
+            execute_db(
+                '''INSERT INTO notifications 
+                   (user_id, notification_type, title, message, priority)
+                   VALUES (?, ?, ?, ?, ?)''',
+                [user['id'], f'broadcast_{message_type}', title, content, 'normal']
+            )
+        
+        log_user_activity(g.current_user['id'], 'broadcast_sent', f'Admin sent broadcast: {title}')
+        logger.info(f"Broadcast message sent by admin {g.current_user['id']}")
+        
+        return jsonify({'message': f'Broadcast sent to {len(users)} users'})
+        
+    except sqlite3.Error as e:
+        logger.error(f"Error sending broadcast: {e}")
+        return jsonify({'error': 'Failed to send broadcast'}), 500
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):

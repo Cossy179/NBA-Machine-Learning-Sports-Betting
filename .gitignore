@@ -106,5 +106,6 @@ venv.bak/
 .idea
 .DS_Store
 
-#ignore web_database.db
+#ignore web_database.db and any database backup files
 web_database.db
+web_database_backup_*.db

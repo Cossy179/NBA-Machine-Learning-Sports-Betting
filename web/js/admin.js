@@ -126,6 +126,8 @@ function initAdminDashboard() {
     loadSystemActivity();
     initAdminNavigation();
     initQuickActions();
+    initMobileNavigation();
+    initSidebarToggle();
 }
 
 // Update admin user info
@@ -357,7 +359,51 @@ function initAdminNavigation() {
             // Update active state
             document.querySelectorAll('.admin-sidebar .nav-item').forEach(item => item.classList.remove('active'));
             this.closest('.nav-item').classList.add('active');
+            
+            // Close mobile sidebar
+            if (window.innerWidth <= 1024) {
+                document.querySelector('.admin-sidebar').classList.remove('mobile-visible');
+            }
         });
+    });
+}
+
+// Initialize mobile navigation
+function initMobileNavigation() {
+    const mobileNavItems = document.querySelectorAll('.mobile-admin-nav-item[data-page]');
+    
+    mobileNavItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const page = this.getAttribute('data-page');
+            navigateToAdminPage(page);
+            
+            // Update active state
+            document.querySelectorAll('.mobile-admin-nav-item').forEach(nav => nav.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+}
+
+// Initialize sidebar toggle
+function initSidebarToggle() {
+    const mobileToggle = document.getElementById('mobileHeaderToggle');
+    const sidebar = document.querySelector('.admin-sidebar');
+    
+    if (mobileToggle && sidebar) {
+        mobileToggle.addEventListener('click', function() {
+            sidebar.classList.toggle('mobile-visible');
+        });
+    }
+    
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', function(e) {
+        if (window.innerWidth <= 1024) {
+            if (!sidebar.contains(e.target) && !mobileToggle.contains(e.target)) {
+                sidebar.classList.remove('mobile-visible');
+            }
+        }
     });
 }
 
@@ -369,6 +415,9 @@ function navigateToAdminPage(page) {
     
     // Update URL without reload
     history.pushState({page}, '', `#${page}`);
+    
+    // Update active states for both desktop and mobile nav
+    updateNavActiveStates(page);
     
     // Update page title and content
     switch (page) {
@@ -406,6 +455,32 @@ function navigateToAdminPage(page) {
             pageTitle.textContent = 'Admin Overview';
             pageSubtitle.textContent = 'Monitor and manage the GoonSteen platform';
             loadAdminOverviewPage();
+    }
+}
+
+// Update navigation active states
+function updateNavActiveStates(page) {
+    // Update desktop nav
+    document.querySelectorAll('.admin-sidebar .nav-item').forEach(item => {
+        item.classList.remove('active');
+        const link = item.querySelector('.nav-link[data-page]');
+        if (link && link.getAttribute('data-page') === page) {
+            item.classList.add('active');
+        }
+    });
+    
+    // Update mobile nav
+    document.querySelectorAll('.mobile-admin-nav-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-page') === page) {
+            item.classList.add('active');
+        }
+    });
+    
+    // Special case for overview page
+    if (page === 'overview' || !page) {
+        document.querySelector('.admin-sidebar .nav-item').classList.add('active');
+        document.querySelector('.mobile-admin-nav-item[data-page="overview"]').classList.add('active');
     }
 }
 
@@ -696,30 +771,320 @@ function viewAllUsers() {
 function showUserModal(user) {
     const modal = document.getElementById('userModal');
     
-    document.getElementById('modalUserName').textContent = `${user.first_name} ${user.last_name}`;
-    document.getElementById('modalUserEmail').textContent = user.email;
-    document.getElementById('modalUserStatus').textContent = user.status;
-    document.getElementById('modalUserJoined').textContent = formatDate(user.created_at);
-    document.getElementById('modalUserBets').textContent = user.total_bets || '0';
-    document.getElementById('modalUserWinRate').textContent = `${user.win_rate || 0}%`;
-    document.getElementById('modalUserProfit').textContent = formatCurrency(user.total_profit || 0);
+    // Populate modal with user data
+    const modalUserName = document.getElementById('modalUserName');
+    const modalUserEmail = document.getElementById('modalUserEmail');
+    const modalUserStatus = document.getElementById('modalUserStatus');
+    const modalUserJoined = document.getElementById('modalUserJoined');
+    const modalUserBets = document.getElementById('modalUserBets');
+    const modalUserWinRate = document.getElementById('modalUserWinRate');
+    const modalUserProfit = document.getElementById('modalUserProfit');
     
-    showModal('userModal');
+    if (modalUserName) modalUserName.textContent = `${user.first_name} ${user.last_name}`;
+    if (modalUserEmail) modalUserEmail.textContent = user.email;
+    if (modalUserStatus) modalUserStatus.textContent = user.status;
+    if (modalUserJoined) modalUserJoined.textContent = formatDate(user.created_at);
+    if (modalUserBets) modalUserBets.textContent = user.total_bets || '0';
+    if (modalUserWinRate) modalUserWinRate.textContent = `${Math.round(user.win_rate || 0)}%`;
+    if (modalUserProfit) modalUserProfit.textContent = formatCurrency(user.total_profit || 0);
+    
+    // Show modal
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Ensure modal is scrolled to top
+        const modalBody = modal.querySelector('.modal-body');
+        if (modalBody) {
+            modalBody.scrollTop = 0;
+        }
+    }
 }
 
+// Close modal and cleanup
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+        
+        // Reset scroll position
+        const modalBody = modal.querySelector('.modal-body');
+        if (modalBody) {
+            modalBody.scrollTop = 0;
+        }
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(e) {
+    const activeModal = document.querySelector('.modal.active');
+    if (activeModal && e.target === activeModal) {
+        const modalId = activeModal.getAttribute('id');
+        closeModal(modalId);
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const activeModal = document.querySelector('.modal.active');
+        if (activeModal) {
+            const modalId = activeModal.getAttribute('id');
+            closeModal(modalId);
+        }
+    }
+});
+
 function showBroadcastModal() {
-    // Implementation for broadcast modal
-    console.log('Show broadcast modal');
+    const modalHtml = `
+        <div class="modal active" id="broadcastModal">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h3>Broadcast Message</h3>
+                    <button class="modal-close" onclick="closeModal('broadcastModal')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="broadcastForm">
+                        <div class="form-group">
+                            <label for="messageTitle">Message Title</label>
+                            <input type="text" id="messageTitle" class="form-input" placeholder="Enter message title" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="messageContent">Message Content</label>
+                            <textarea id="messageContent" class="form-textarea" rows="6" placeholder="Enter your message..." required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="messageType">Message Type</label>
+                            <select id="messageType" class="form-select">
+                                <option value="info">Information</option>
+                                <option value="warning">Warning</option>
+                                <option value="success">Success</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="closeModal('broadcastModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="sendBroadcast()">Send Message</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
 function showReportModal() {
-    // Implementation for report modal
-    console.log('Show report modal');
+    const modalHtml = `
+        <div class="modal active" id="reportModal">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h3>Generate Report</h3>
+                    <button class="modal-close" onclick="closeModal('reportModal')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="reportForm">
+                        <div class="form-group">
+                            <label for="reportType">Report Type</label>
+                            <select id="reportType" class="form-select" required>
+                                <option value="">Select Report Type</option>
+                                <option value="user_activity">User Activity Report</option>
+                                <option value="betting_analytics">Betting Analytics Report</option>
+                                <option value="model_performance">Model Performance Report</option>
+                                <option value="system_health">System Health Report</option>
+                                <option value="financial">Financial Summary Report</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="dateRange">Date Range</label>
+                            <select id="dateRange" class="form-select" required>
+                                <option value="7d">Last 7 Days</option>
+                                <option value="30d">Last 30 Days</option>
+                                <option value="90d">Last 90 Days</option>
+                                <option value="1y">Last Year</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="reportFormat">Format</label>
+                            <select id="reportFormat" class="form-select">
+                                <option value="pdf">PDF</option>
+                                <option value="excel">Excel</option>
+                                <option value="csv">CSV</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="closeModal('reportModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="generateReportFile()">Generate Report</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
 function showExportModal() {
-    // Implementation for export modal
-    console.log('Show export modal');
+    const modalHtml = `
+        <div class="modal active" id="exportModal">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h3>Export Data</h3>
+                    <button class="modal-close" onclick="closeModal('exportModal')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="export-options">
+                        <div class="export-option">
+                            <input type="checkbox" id="exportUsers" checked>
+                            <label for="exportUsers">User Data</label>
+                        </div>
+                        <div class="export-option">
+                            <input type="checkbox" id="exportBets" checked>
+                            <label for="exportBets">Betting Data</label>
+                        </div>
+                        <div class="export-option">
+                            <input type="checkbox" id="exportActivity">
+                            <label for="exportActivity">Activity Logs</label>
+                        </div>
+                        <div class="export-option">
+                            <input type="checkbox" id="exportModels">
+                            <label for="exportModels">Model Performance</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="exportFormat">Export Format</label>
+                        <select id="exportFormat" class="form-select">
+                            <option value="json">JSON</option>
+                            <option value="csv">CSV</option>
+                            <option value="excel">Excel</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="closeModal('exportModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="executeExport()">Export Data</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+// Modal action functions
+function sendBroadcast() {
+    const title = document.getElementById('messageTitle').value;
+    const content = document.getElementById('messageContent').value;
+    const type = document.getElementById('messageType').value;
+    
+    if (!title || !content) {
+        showAdminError('Please fill in all required fields');
+        return;
+    }
+    
+    // Send broadcast message
+    makeAuthenticatedRequest('/api/admin/broadcast', {
+        method: 'POST',
+        body: JSON.stringify({ title, content, type })
+    }).then(response => {
+        if (response.ok) {
+            showAdminSuccess('Broadcast message sent successfully');
+            closeModal('broadcastModal');
+            document.getElementById('broadcastModal').remove();
+        } else {
+            showAdminError('Failed to send broadcast message');
+        }
+    }).catch(error => {
+        console.error('Broadcast error:', error);
+        showAdminError('Network error sending broadcast');
+    });
+}
+
+function generateReportFile() {
+    const reportType = document.getElementById('reportType').value;
+    const dateRange = document.getElementById('dateRange').value;
+    const format = document.getElementById('reportFormat').value;
+    
+    if (!reportType) {
+        showAdminError('Please select a report type');
+        return;
+    }
+    
+    showAdminSuccess('Report generation started. Download will begin shortly.');
+    closeModal('reportModal');
+    document.getElementById('reportModal').remove();
+    
+    // Trigger report generation
+    makeAuthenticatedRequest('/api/admin/generate-report', {
+        method: 'POST',
+        body: JSON.stringify({ reportType, dateRange, format })
+    }).then(response => {
+        if (response.ok) {
+            return response.blob();
+        }
+        throw new Error('Report generation failed');
+    }).then(blob => {
+        // Download the file
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `goonsteen_${reportType}_${dateRange}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    }).catch(error => {
+        console.error('Report generation error:', error);
+        showAdminError('Failed to generate report');
+    });
+}
+
+function executeExport() {
+    const exportData = {
+        users: document.getElementById('exportUsers').checked,
+        bets: document.getElementById('exportBets').checked,
+        activity: document.getElementById('exportActivity').checked,
+        models: document.getElementById('exportModels').checked,
+        format: document.getElementById('exportFormat').value
+    };
+    
+    showAdminSuccess('Data export started. Download will begin shortly.');
+    closeModal('exportModal');
+    document.getElementById('exportModal').remove();
+    
+    // Trigger data export
+    makeAuthenticatedRequest('/api/admin/export', {
+        method: 'POST',
+        body: JSON.stringify(exportData)
+    }).then(response => {
+        if (response.ok) {
+            return response.blob();
+        }
+        throw new Error('Export failed');
+    }).then(blob => {
+        // Download the file
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `goonsteen_export_${new Date().toISOString().split('T')[0]}.${exportData.format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    }).catch(error => {
+        console.error('Export error:', error);
+        showAdminError('Failed to export data');
+    });
 }
 
 // System Functions
@@ -1083,7 +1448,98 @@ function loadSystemPage() {
 }
 
 function loadAdminSettingsPage() {
-    console.log('Loading admin settings page...');
+    const content = document.getElementById('adminDashboardContent');
+    content.innerHTML = `
+        <div class="admin-settings-page">
+            <div class="settings-sections">
+                <div class="admin-section">
+                    <div class="section-header">
+                        <h2 class="section-title">System Configuration</h2>
+                        <button class="btn btn-primary" onclick="saveSettings()">
+                            <i class="fas fa-save"></i>
+                            Save Changes
+                        </button>
+                    </div>
+                    
+                    <div class="settings-grid">
+                        <div class="setting-group">
+                            <h4>Security Settings</h4>
+                            <div class="setting-item">
+                                <label for="maxLoginAttempts">Max Login Attempts</label>
+                                <input type="number" id="maxLoginAttempts" class="form-input" value="5" min="3" max="10">
+                            </div>
+                            <div class="setting-item">
+                                <label for="sessionTimeout">Session Timeout (minutes)</label>
+                                <input type="number" id="sessionTimeout" class="form-input" value="1440" min="60" max="10080">
+                            </div>
+                            <div class="setting-item">
+                                <label for="passwordMinLength">Minimum Password Length</label>
+                                <input type="number" id="passwordMinLength" class="form-input" value="8" min="6" max="20">
+                            </div>
+                        </div>
+                        
+                        <div class="setting-group">
+                            <h4>Betting Configuration</h4>
+                            <div class="setting-item">
+                                <label for="defaultBankroll">Default Bankroll ($)</label>
+                                <input type="number" id="defaultBankroll" class="form-input" value="1000" min="100" max="10000" step="100">
+                            </div>
+                            <div class="setting-item">
+                                <label for="minBetAmount">Minimum Bet Amount ($)</label>
+                                <input type="number" id="minBetAmount" class="form-input" value="1" min="0.01" max="100" step="0.01">
+                            </div>
+                            <div class="setting-item">
+                                <label for="maxBetAmount">Maximum Bet Amount ($)</label>
+                                <input type="number" id="maxBetAmount" class="form-input" value="1000" min="100" max="50000" step="100">
+                            </div>
+                        </div>
+                        
+                        <div class="setting-group">
+                            <h4>AI Model Settings</h4>
+                            <div class="setting-item">
+                                <label for="modelUpdateFreq">Update Frequency (hours)</label>
+                                <input type="number" id="modelUpdateFreq" class="form-input" value="24" min="1" max="168">
+                            </div>
+                            <div class="setting-item">
+                                <label for="confidenceThreshold">Confidence Threshold (%)</label>
+                                <input type="number" id="confidenceThreshold" class="form-input" value="60" min="50" max="95">
+                            </div>
+                            <div class="setting-item">
+                                <div class="checkbox-wrapper">
+                                    <input type="checkbox" id="kellyEnabled" checked>
+                                    <label for="kellyEnabled">Enable Kelly Criterion</label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-group">
+                            <h4>System Maintenance</h4>
+                            <div class="maintenance-actions">
+                                <button class="btn btn-outline" onclick="cleanupOldData()">
+                                    <i class="fas fa-broom"></i>
+                                    Cleanup Old Data
+                                </button>
+                                <button class="btn btn-outline" onclick="optimizeDatabase()">
+                                    <i class="fas fa-database"></i>
+                                    Optimize Database
+                                </button>
+                                <button class="btn btn-outline" onclick="clearCache()">
+                                    <i class="fas fa-trash"></i>
+                                    Clear Cache
+                                </button>
+                                <button class="btn btn-warning" onclick="backupDatabase()">
+                                    <i class="fas fa-download"></i>
+                                    Backup Database
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadCurrentSettings();
 }
 
 // Utility Functions
@@ -1386,6 +1842,162 @@ function formatDateTime(timestamp) {
     });
 }
 
+// Settings functions
+async function loadCurrentSettings() {
+    try {
+        const response = await makeAuthenticatedRequest('/api/admin/settings');
+        const settings = await response.json();
+        
+        // Populate form fields with current settings
+        Object.keys(settings).forEach(key => {
+            const element = document.getElementById(key);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = settings[key] === 'true' || settings[key] === true;
+                } else {
+                    element.value = settings[key];
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('Failed to load settings:', error);
+        showAdminError('Failed to load current settings');
+    }
+}
+
+async function saveSettings() {
+    const settings = {
+        maxLoginAttempts: document.getElementById('maxLoginAttempts').value,
+        sessionTimeout: document.getElementById('sessionTimeout').value,
+        passwordMinLength: document.getElementById('passwordMinLength').value,
+        defaultBankroll: document.getElementById('defaultBankroll').value,
+        minBetAmount: document.getElementById('minBetAmount').value,
+        maxBetAmount: document.getElementById('maxBetAmount').value,
+        modelUpdateFreq: document.getElementById('modelUpdateFreq').value,
+        confidenceThreshold: document.getElementById('confidenceThreshold').value,
+        kellyEnabled: document.getElementById('kellyEnabled').checked
+    };
+    
+    try {
+        const response = await makeAuthenticatedRequest('/api/admin/settings', {
+            method: 'POST',
+            body: JSON.stringify(settings)
+        });
+        
+        if (response.ok) {
+            showAdminSuccess('Settings saved successfully');
+        } else {
+            showAdminError('Failed to save settings');
+        }
+    } catch (error) {
+        console.error('Failed to save settings:', error);
+        showAdminError('Network error saving settings');
+    }
+}
+
+// Maintenance functions
+async function cleanupOldData() {
+    if (confirm('This will remove old logs and inactive sessions. Continue?')) {
+        try {
+            const response = await makeAuthenticatedRequest('/api/admin/cleanup', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                showAdminSuccess('Old data cleaned up successfully');
+            } else {
+                showAdminError('Failed to cleanup old data');
+            }
+        } catch (error) {
+            console.error('Cleanup error:', error);
+            showAdminError('Network error during cleanup');
+        }
+    }
+}
+
+async function optimizeDatabase() {
+    if (confirm('This will optimize the database. This may take a few minutes. Continue?')) {
+        try {
+            const response = await makeAuthenticatedRequest('/api/admin/optimize-db', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                showAdminSuccess('Database optimized successfully');
+            } else {
+                showAdminError('Failed to optimize database');
+            }
+        } catch (error) {
+            console.error('Optimization error:', error);
+            showAdminError('Network error during optimization');
+        }
+    }
+}
+
+async function clearCache() {
+    if (confirm('This will clear all cached data. Continue?')) {
+        try {
+            const response = await makeAuthenticatedRequest('/api/admin/clear-cache', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                showAdminSuccess('Cache cleared successfully');
+            } else {
+                showAdminError('Failed to clear cache');
+            }
+        } catch (error) {
+            console.error('Cache clear error:', error);
+            showAdminError('Network error clearing cache');
+        }
+    }
+}
+
+async function backupDatabase() {
+    try {
+        showAdminSuccess('Database backup started. Download will begin shortly.');
+        
+        const response = await makeAuthenticatedRequest('/api/admin/backup');
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `goonsteen_backup_${new Date().toISOString().split('T')[0]}.db`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            showAdminError('Failed to create database backup');
+        }
+    } catch (error) {
+        console.error('Backup error:', error);
+        showAdminError('Network error creating backup');
+    }
+}
+
+// Logout function
+function logout() {
+    if (confirm('Are you sure you want to logout?')) {
+        // Clear local storage
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user_data');
+        
+        // Call logout API
+        makeAuthenticatedRequest('/api/logout', {
+            method: 'POST'
+        }).then(() => {
+            window.location.href = 'login.html';
+        }).catch(() => {
+            // Even if logout fails, clear local data and redirect
+            window.location.href = 'login.html';
+        });
+    }
+}
+
 // Export functions for global use
 window.AdminUtils = {
     navigateToAdminPage,
@@ -1405,5 +2017,6 @@ window.AdminUtils = {
     retrainModel,
     loadBettingData,
     loadModelData,
-    loadSystemActivityPage
+    loadSystemActivityPage,
+    logout
 };

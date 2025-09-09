@@ -105,8 +105,13 @@
         <!-- Header -->
         <header class="dashboard-header admin-header">
             <div class="header-left">
-                <h1 class="page-title">Admin Overview</h1>
-                <p class="page-subtitle">Monitor and manage the GoonSteen platform</p>
+                <button class="mobile-header-toggle" id="mobileHeaderToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="header-title">
+                    <h1 class="page-title">Admin Overview</h1>
+                    <p class="page-subtitle">Monitor and manage the GoonSteen platform</p>
+                </div>
             </div>
             <div class="header-right">
                 <div class="header-actions">
@@ -494,6 +499,30 @@
             </div>
         </div>
     </main>
+
+    <!-- Mobile Admin Navigation -->
+    <nav class="mobile-admin-nav">
+        <a href="#overview" class="mobile-admin-nav-item active" data-page="overview">
+            <i class="fas fa-chart-pie"></i>
+            <span>Overview</span>
+        </a>
+        <a href="#users" class="mobile-admin-nav-item" data-page="users">
+            <i class="fas fa-users"></i>
+            <span>Users</span>
+        </a>
+        <a href="#activity" class="mobile-admin-nav-item" data-page="activity">
+            <i class="fas fa-activity"></i>
+            <span>Activity</span>
+        </a>
+        <a href="#system" class="mobile-admin-nav-item" data-page="system">
+            <i class="fas fa-server"></i>
+            <span>System</span>
+        </a>
+        <a href="#settings" class="mobile-admin-nav-item" data-page="settings">
+            <i class="fas fa-cog"></i>
+            <span>Settings</span>
+        </a>
+    </nav>
 
     <!-- User Details Modal -->
     <div id="userModal" class="modal">
