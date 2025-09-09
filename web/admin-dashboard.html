@@ -130,83 +130,83 @@
         <div class="dashboard-content" id="adminDashboardContent">
             <!-- Admin Overview Cards -->
             <div class="admin-overview-cards">
-                <div class="admin-card">
+                <div class="admin-card" data-card="users">
                     <div class="card-header">
                         <div class="card-title">Total Users</div>
                         <div class="card-icon">
                             <i class="fas fa-users"></i>
                         </div>
                     </div>
-                    <div class="card-value">1,247</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        +12 this week
+                    <div class="card-value" id="totalUsers">Loading...</div>
+                    <div class="card-change" id="usersChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                     <div class="card-progress">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: 78%"></div>
+                            <div class="progress-fill" id="usersProgress" style="width: 0%"></div>
                         </div>
-                        <span>78% active</span>
+                        <span id="usersProgressText">Loading...</span>
                     </div>
                 </div>
 
-                <div class="admin-card">
+                <div class="admin-card" data-card="bets">
                     <div class="card-header">
                         <div class="card-title">Total Bets</div>
                         <div class="card-icon">
                             <i class="fas fa-chart-line"></i>
                         </div>
                     </div>
-                    <div class="card-value">15,892</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        +234 today
+                    <div class="card-value" id="totalBets">Loading...</div>
+                    <div class="card-change" id="betsChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                     <div class="card-progress">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: 85%"></div>
+                            <div class="progress-fill" id="betsProgress" style="width: 0%"></div>
                         </div>
-                        <span>85% win rate</span>
+                        <span id="betsProgressText">Loading...</span>
                     </div>
                 </div>
 
-                <div class="admin-card">
+                <div class="admin-card" data-card="revenue">
                     <div class="card-header">
-                        <div class="card-title">Revenue</div>
+                        <div class="card-title">Platform Revenue</div>
                         <div class="card-icon">
                             <i class="fas fa-dollar-sign"></i>
                         </div>
                     </div>
-                    <div class="card-value">$24,650</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        +8.5% this month
+                    <div class="card-value" id="totalRevenue">Loading...</div>
+                    <div class="card-change" id="revenueChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                     <div class="card-progress">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: 92%"></div>
+                            <div class="progress-fill" id="revenueProgress" style="width: 0%"></div>
                         </div>
-                        <span>92% of target</span>
+                        <span id="revenueProgressText">Loading...</span>
                     </div>
                 </div>
 
-                <div class="admin-card">
+                <div class="admin-card" data-card="accuracy">
                     <div class="card-header">
                         <div class="card-title">Model Accuracy</div>
                         <div class="card-icon">
                             <i class="fas fa-brain"></i>
                         </div>
                     </div>
-                    <div class="card-value">68.9%</div>
-                    <div class="card-change positive">
-                        <i class="fas fa-arrow-up"></i>
-                        +2.1% improvement
+                    <div class="card-value" id="modelAccuracy">Loading...</div>
+                    <div class="card-change" id="accuracyChange">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading...
                     </div>
                     <div class="card-progress">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: 69%"></div>
+                            <div class="progress-fill" id="accuracyProgress" style="width: 0%"></div>
                         </div>
-                        <span>Above benchmark</span>
+                        <span id="accuracyProgressText">Loading...</span>
                     </div>
                 </div>
             </div>

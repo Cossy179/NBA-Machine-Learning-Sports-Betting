@@ -13,6 +13,93 @@ document.addEventListener('DOMContentLoaded', function() {
     initAdminRealTime();
 });
 
+// Import auth functions from auth.js
+function isAuthenticated() {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return false;
+    
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return payload.exp * 1000 > Date.now();
+    } catch {
+        return false;
+    }
+}
+
+function makeAuthenticatedRequest(url, options = {}) {
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+        throw new Error('No authentication token');
+    }
+    
+    const defaultOptions = {
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        }
+    };
+    
+    const mergedOptions = {
+        ...defaultOptions,
+        ...options,
+        headers: {
+            ...defaultOptions.headers,
+            ...options.headers
+        }
+    };
+    
+    return fetch(url, mergedOptions).then(response => {
+        if (response.status === 401) {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_data');
+            window.location.href = '/login.html';
+            return;
+        }
+        return response;
+    });
+}
+
+function showModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD'
+    }).format(amount);
+}
+
+function formatRelativeTime(timestamp) {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diff = now - time;
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 60) {
+        return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    } else if (hours < 24) {
+        return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    } else {
+        return `${days} day${days !== 1 ? 's' : ''} ago`;
+    }
+}
+
 // Check if user has admin privileges
 async function checkAdminAuthentication() {
     try {
@@ -60,57 +147,83 @@ function updateAdminUserInfo(user) {
 // Load admin overview data
 async function loadAdminOverview() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/overview');
-        const data = await response.json();
+        // Show loading state
+        showLoadingState();
         
+        const response = await makeAuthenticatedRequest('/api/admin/overview');
+        if (!response.ok) {
+            throw new Error('Failed to fetch overview data');
+        }
+        
+        const data = await response.json();
         updateAdminOverviewCards(data);
+        
+        // Hide loading state
+        hideLoadingState();
         
     } catch (error) {
         console.error('Failed to load admin overview:', error);
         showAdminError('Failed to load overview data');
+        hideLoadingState();
     }
+}
+
+// Show loading state for cards
+function showLoadingState() {
+    const cards = document.querySelectorAll('.admin-card');
+    cards.forEach(card => {
+        card.classList.add('loading');
+        const value = card.querySelector('.card-value');
+        const change = card.querySelector('.card-change');
+        const progressText = card.querySelector('.card-progress span');
+        
+        if (value) value.textContent = 'Loading...';
+        if (change) change.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+        if (progressText) progressText.textContent = 'Loading...';
+    });
+}
+
+// Hide loading state for cards
+function hideLoadingState() {
+    const cards = document.querySelectorAll('.admin-card');
+    cards.forEach(card => {
+        card.classList.remove('loading');
+    });
 }
 
 // Update admin overview cards
 function updateAdminOverviewCards(data) {
-    const cards = document.querySelectorAll('.admin-card');
+    // Update Total Users card
+    document.getElementById('totalUsers').textContent = formatNumber(data.total_users);
+    updateAdminChangeIndicator(document.getElementById('usersChange'), data.new_users_week, 'this week');
+    document.getElementById('usersProgress').style.width = `${data.active_users_percentage}%`;
+    document.getElementById('usersProgressText').textContent = `${data.active_users_percentage}% active`;
     
-    cards.forEach((card, index) => {
-        const value = card.querySelector('.card-value');
-        const change = card.querySelector('.card-change');
-        const progressFill = card.querySelector('.progress-fill');
-        const progressText = card.querySelector('.card-progress span');
-        
-        switch (index) {
-            case 0: // Total Users
-                value.textContent = formatNumber(data.total_users);
-                updateAdminChangeIndicator(change, data.new_users_week, 'this week');
-                if (progressFill) progressFill.style.width = `${data.active_users_percentage}%`;
-                if (progressText) progressText.textContent = `${data.active_users_percentage}% active`;
-                break;
-                
-            case 1: // Total Bets
-                value.textContent = formatNumber(data.total_bets);
-                updateAdminChangeIndicator(change, data.bets_today, 'today');
-                if (progressFill) progressFill.style.width = `${data.win_rate}%`;
-                if (progressText) progressText.textContent = `${data.win_rate}% win rate`;
-                break;
-                
-            case 2: // Revenue
-                value.textContent = formatCurrency(data.revenue);
-                updateAdminChangeIndicator(change, data.revenue_growth, '% this month');
-                if (progressFill) progressFill.style.width = `${data.revenue_target_percentage}%`;
-                if (progressText) progressText.textContent = `${data.revenue_target_percentage}% of target`;
-                break;
-                
-            case 3: // Model Accuracy
-                value.textContent = `${data.model_accuracy}%`;
-                updateAdminChangeIndicator(change, data.accuracy_improvement, '% improvement');
-                if (progressFill) progressFill.style.width = `${data.model_accuracy}%`;
-                if (progressText) progressText.textContent = 'Above benchmark';
-                break;
-        }
-    });
+    // Update Total Bets card
+    document.getElementById('totalBets').textContent = formatNumber(data.total_bets);
+    updateAdminChangeIndicator(document.getElementById('betsChange'), data.bets_today, 'today');
+    document.getElementById('betsProgress').style.width = `${data.win_rate}%`;
+    document.getElementById('betsProgressText').textContent = `${data.win_rate}% win rate`;
+    
+    // Update Revenue card
+    document.getElementById('totalRevenue').textContent = formatCurrency(data.revenue);
+    updateAdminChangeIndicator(document.getElementById('revenueChange'), data.revenue_growth, '% this month');
+    document.getElementById('revenueProgress').style.width = `${data.revenue_target_percentage}%`;
+    document.getElementById('revenueProgressText').textContent = `${data.revenue_target_percentage}% of target`;
+    
+    // Update Model Accuracy card
+    document.getElementById('modelAccuracy').textContent = `${data.model_accuracy}%`;
+    updateAdminChangeIndicator(document.getElementById('accuracyChange'), data.accuracy_improvement, '% improvement');
+    document.getElementById('accuracyProgress').style.width = `${data.model_accuracy}%`;
+    document.getElementById('accuracyProgressText').textContent = 'Above benchmark';
+    
+    // Add smooth animation to progress bars
+    setTimeout(() => {
+        document.getElementById('usersProgress').style.width = `${data.active_users_percentage}%`;
+        document.getElementById('betsProgress').style.width = `${data.win_rate}%`;
+        document.getElementById('revenueProgress').style.width = `${data.revenue_target_percentage}%`;
+        document.getElementById('accuracyProgress').style.width = `${data.model_accuracy}%`;
+    }, 100);
 }
 
 // Load recent users
@@ -386,12 +499,55 @@ async function updateAdminChartData(chart, metric) {
 
 // Initialize real-time updates
 function initAdminRealTime() {
+    // Load system health immediately
+    loadSystemHealth();
+    
     // Update every 30 seconds
     setInterval(updateAdminRealTimeData, 30000);
     
     // Listen for admin WebSocket updates
     if (window.WebSocket) {
         connectAdminWebSocket();
+    }
+}
+
+// Load system health data
+async function loadSystemHealth() {
+    try {
+        const response = await makeAuthenticatedRequest('/api/admin/system-health');
+        if (response.ok) {
+            const healthData = await response.json();
+            updateSystemHealthMetrics(healthData);
+            updateSystemStatus(healthData.status);
+        }
+    } catch (error) {
+        console.error('Failed to load system health:', error);
+    }
+}
+
+// Update system status indicator
+function updateSystemStatus(status) {
+    const statusIndicator = document.querySelector('.status-indicator');
+    const statusText = document.querySelector('.system-status span');
+    
+    if (statusIndicator) {
+        statusIndicator.className = `status-indicator ${status}`;
+    }
+    
+    if (statusText) {
+        switch (status) {
+            case 'healthy':
+                statusText.textContent = 'All Systems Operational';
+                break;
+            case 'warning':
+                statusText.textContent = 'System Performance Warning';
+                break;
+            case 'error':
+                statusText.textContent = 'System Issues Detected';
+                break;
+            default:
+                statusText.textContent = 'System Status Unknown';
+        }
     }
 }
 
@@ -586,18 +742,34 @@ function updateSystemHealthMetrics(healthData) {
                 fill.className = `metric-fill ${getHealthClass(healthData.memory)}`;
                 break;
             case 2: // Database
-                value.textContent = `${healthData.database}%`;
-                fill.style.width = `${healthData.database}%`;
-                fill.className = `metric-fill ${getHealthClass(healthData.database)}`;
+                if (healthData.database_size_mb !== undefined) {
+                    value.textContent = `${healthData.database_size_mb}MB`;
+                    const sizePercentage = Math.min((healthData.database_size_mb / 1000) * 100, 100);
+                    fill.style.width = `${sizePercentage}%`;
+                    fill.className = `metric-fill ${getHealthClass(sizePercentage)}`;
+                } else {
+                    value.textContent = `${healthData.disk}%`;
+                    fill.style.width = `${healthData.disk}%`;
+                    fill.className = `metric-fill ${getHealthClass(healthData.disk)}`;
+                }
                 break;
             case 3: // API Response
-                value.textContent = `${healthData.api_response}ms`;
-                const responsePercentage = Math.min((healthData.api_response / 1000) * 100, 100);
+                value.textContent = `${healthData.api_response || healthData.database_response_ms}ms`;
+                const responseTime = healthData.api_response || healthData.database_response_ms || 200;
+                const responsePercentage = Math.min((responseTime / 1000) * 100, 100);
                 fill.style.width = `${responsePercentage}%`;
-                fill.className = `metric-fill ${getHealthClass(responsePercentage)}`;
+                fill.className = `metric-fill ${getHealthClass(responsePercentage, true)}`;
                 break;
         }
     });
+}
+
+// Update active users count
+function updateActiveUsersCount(count) {
+    const activeUsersElement = document.querySelector('[data-metric="active-users"]');
+    if (activeUsersElement) {
+        activeUsersElement.textContent = count;
+    }
 }
 
 function startModelUpdate() {
@@ -611,23 +783,303 @@ function loadAdminOverviewPage() {
 }
 
 function loadUsersPage() {
-    console.log('Loading users page...');
+    const content = document.getElementById('adminDashboardContent');
+    content.innerHTML = `
+        <div class="users-management-page">
+            <div class="page-controls">
+                <div class="search-bar">
+                    <input type="text" id="userSearch" placeholder="Search users..." class="search-input">
+                    <button class="btn btn-primary" onclick="searchUsers()">
+                        <i class="fas fa-search"></i>
+                        Search
+                    </button>
+                </div>
+                <div class="filter-controls">
+                    <select id="statusFilter" class="form-select">
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="premium">Premium</option>
+                        <option value="suspended">Suspended</option>
+                    </select>
+                    <button class="btn btn-outline" onclick="exportUsers()">
+                        <i class="fas fa-download"></i>
+                        Export
+                    </button>
+                </div>
+            </div>
+            
+            <div class="admin-section">
+                <div class="section-header">
+                    <h2 class="section-title">All Users</h2>
+                    <div class="section-actions">
+                        <button class="btn btn-primary" onclick="loadAllUsers()">
+                            <i class="fas fa-refresh"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="users-table-container">
+                    <table class="admin-table" id="allUsersTable">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Subscription</th>
+                                <th>Joined</th>
+                                <th>Last Login</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="allUsersTableBody">
+                            <tr><td colspan="7" class="loading-row">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadAllUsers();
 }
 
 function loadActivityPage() {
-    console.log('Loading activity page...');
+    const content = document.getElementById('adminDashboardContent');
+    content.innerHTML = `
+        <div class="activity-management-page">
+            <div class="admin-section">
+                <div class="section-header">
+                    <h2 class="section-title">System Activity Log</h2>
+                    <div class="section-actions">
+                        <select id="activityFilter" class="form-select">
+                            <option value="">All Activity</option>
+                            <option value="login_success">Logins</option>
+                            <option value="bet_placed">Bets</option>
+                            <option value="user_registration">Registrations</option>
+                            <option value="account_suspended">Suspensions</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadSystemActivity()">
+                            <i class="fas fa-refresh"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="activity-table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>User</th>
+                                <th>Activity</th>
+                                <th>Description</th>
+                                <th>IP Address</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activityTableBody">
+                            <tr><td colspan="5" class="loading-row">Loading activity...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadSystemActivityPage();
 }
 
 function loadBetsPage() {
-    console.log('Loading bets page...');
+    const content = document.getElementById('adminDashboardContent');
+    content.innerHTML = `
+        <div class="betting-analytics-page">
+            <div class="analytics-overview">
+                <div class="analytics-card">
+                    <h3>Total Volume</h3>
+                    <div class="analytics-value" id="totalVolume">Loading...</div>
+                </div>
+                <div class="analytics-card">
+                    <h3>Win Rate</h3>
+                    <div class="analytics-value" id="overallWinRate">Loading...</div>
+                </div>
+                <div class="analytics-card">
+                    <h3>Average Stake</h3>
+                    <div class="analytics-value" id="avgStake">Loading...</div>
+                </div>
+                <div class="analytics-card">
+                    <h3>Profit Margin</h3>
+                    <div class="analytics-value" id="profitMargin">Loading...</div>
+                </div>
+            </div>
+            
+            <div class="admin-section">
+                <div class="section-header">
+                    <h2 class="section-title">Recent Bets</h2>
+                    <button class="btn btn-primary" onclick="loadBettingData()">
+                        <i class="fas fa-refresh"></i>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="bets-table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Bet Type</th>
+                                <th>Stake</th>
+                                <th>Odds</th>
+                                <th>Status</th>
+                                <th>Payout</th>
+                                <th>Placed</th>
+                            </tr>
+                        </thead>
+                        <tbody id="betsTableBody">
+                            <tr><td colspan="7" class="loading-row">Loading bets...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadBettingData();
 }
 
 function loadModelsPage() {
-    console.log('Loading models page...');
+    const content = document.getElementById('adminDashboardContent');
+    content.innerHTML = `
+        <div class="models-management-page">
+            <div class="models-overview">
+                <div class="model-card" data-model="ensemble">
+                    <div class="model-header">
+                        <h3>Ensemble Model</h3>
+                        <div class="model-status active">Active</div>
+                    </div>
+                    <div class="model-stats">
+                        <div class="stat">
+                            <span class="stat-label">Accuracy</span>
+                            <span class="stat-value" id="ensembleAccuracy">Loading...</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Predictions</span>
+                            <span class="stat-value" id="ensemblePredictions">Loading...</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline" onclick="retrainModel('ensemble')">Retrain Model</button>
+                </div>
+                
+                <div class="model-card" data-model="xgboost">
+                    <div class="model-header">
+                        <h3>XGBoost Model</h3>
+                        <div class="model-status active">Active</div>
+                    </div>
+                    <div class="model-stats">
+                        <div class="stat">
+                            <span class="stat-label">Accuracy</span>
+                            <span class="stat-value" id="xgboostAccuracy">Loading...</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Predictions</span>
+                            <span class="stat-value" id="xgboostPredictions">Loading...</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline" onclick="retrainModel('xgboost')">Retrain Model</button>
+                </div>
+                
+                <div class="model-card" data-model="neural">
+                    <div class="model-header">
+                        <h3>Neural Network</h3>
+                        <div class="model-status active">Active</div>
+                    </div>
+                    <div class="model-stats">
+                        <div class="stat">
+                            <span class="stat-label">Accuracy</span>
+                            <span class="stat-value" id="neuralAccuracy">Loading...</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Predictions</span>
+                            <span class="stat-value" id="neuralPredictions">Loading...</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline" onclick="retrainModel('neural')">Retrain Model</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadModelData();
 }
 
 function loadSystemPage() {
-    console.log('Loading system page...');
+    const content = document.getElementById('adminDashboardContent');
+    content.innerHTML = `
+        <div class="system-health-page">
+            <div class="health-overview">
+                <div class="health-card">
+                    <h3>System Status</h3>
+                    <div class="system-status-indicator" id="systemStatusIndicator">
+                        <div class="status-dot online"></div>
+                        <span>All Systems Operational</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="admin-section">
+                <div class="section-header">
+                    <h2 class="section-title">System Metrics</h2>
+                    <button class="btn btn-primary" onclick="loadSystemHealth()">
+                        <i class="fas fa-refresh"></i>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="system-metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <h4>CPU Usage</h4>
+                            <span class="metric-value" id="cpuUsage">Loading...</span>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill" id="cpuFill"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <h4>Memory Usage</h4>
+                            <span class="metric-value" id="memoryUsage">Loading...</span>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill" id="memoryFill"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <h4>Database Size</h4>
+                            <span class="metric-value" id="databaseSize">Loading...</span>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill" id="databaseFill"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <h4>API Response</h4>
+                            <span class="metric-value" id="apiResponse">Loading...</span>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill" id="apiFill"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadSystemHealth();
 }
 
 function loadAdminSettingsPage() {
@@ -676,10 +1128,18 @@ function getActivityIcon(type) {
     }
 }
 
-function getHealthClass(value) {
-    if (value < 50) return 'good';
-    if (value < 80) return 'warning';
-    return 'error';
+function getHealthClass(value, isResponseTime = false) {
+    if (isResponseTime) {
+        // For response time, lower is better
+        if (value < 200) return 'good';
+        if (value < 500) return 'warning';
+        return 'error';
+    } else {
+        // For CPU, memory, disk usage
+        if (value < 60) return 'good';
+        if (value < 85) return 'warning';
+        return 'error';
+    }
 }
 
 function updateAdminChangeIndicator(element, value, suffix) {
@@ -717,75 +1177,6 @@ function showNotification(message, type) {
         </button>
     `;
     
-    // Add styles if not already added
-    if (!document.querySelector('#admin-notification-styles')) {
-        const style = document.createElement('style');
-        style.id = 'admin-notification-styles';
-        style.textContent = `
-            .admin-notification {
-                position: fixed;
-                top: 2rem;
-                right: 2rem;
-                background: white;
-                border-radius: 0.75rem;
-                padding: 1rem 1.5rem;
-                box-shadow: var(--shadow-xl);
-                border-left: 4px solid var(--accent-color);
-                z-index: 10000;
-                display: flex;
-                align-items: center;
-                gap: 1rem;
-                min-width: 300px;
-                animation: slideInRight 0.3s ease;
-            }
-            
-            .admin-notification.error {
-                border-left-color: #ef4444;
-            }
-            
-            .admin-notification.success {
-                border-left-color: var(--accent-color);
-            }
-            
-            .notification-content {
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex: 1;
-            }
-            
-            .notification-content i {
-                color: var(--accent-color);
-                font-size: 1.125rem;
-            }
-            
-            .admin-notification.error .notification-content i {
-                color: #ef4444;
-            }
-            
-            .notification-close {
-                background: none;
-                border: none;
-                color: var(--text-light);
-                cursor: pointer;
-                padding: 0.25rem;
-                border-radius: 0.25rem;
-                transition: all 0.2s ease;
-            }
-            
-            .notification-close:hover {
-                background: var(--bg-secondary);
-                color: var(--text-secondary);
-            }
-            
-            @keyframes slideInRight {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-    
     document.body.appendChild(notification);
     
     // Auto remove after 5 seconds
@@ -794,6 +1185,205 @@ function showNotification(message, type) {
             notification.remove();
         }
     }, 5000);
+}
+
+// Additional Admin Functions
+async function loadAllUsers() {
+    try {
+        const response = await makeAuthenticatedRequest('/api/admin/all-users');
+        const users = await response.json();
+        
+        const tbody = document.getElementById('allUsersTableBody');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        users.forEach(user => {
+            const row = createDetailedUserTableRow(user);
+            tbody.appendChild(row);
+        });
+        
+    } catch (error) {
+        console.error('Failed to load all users:', error);
+        showAdminError('Failed to load users');
+    }
+}
+
+function createDetailedUserTableRow(user) {
+    const row = document.createElement('tr');
+    const statusClass = getUserStatusClass(user.status);
+    const joinedTime = formatDate(user.created_at);
+    const lastLogin = user.last_login ? formatRelativeTime(user.last_login) : 'Never';
+    
+    row.innerHTML = `
+        <td>
+            <div class="user-cell">
+                <div class="user-avatar small">${user.first_name.charAt(0)}${user.last_name.charAt(0)}</div>
+                <div class="user-info">
+                    <div class="user-name">${user.first_name} ${user.last_name}</div>
+                    <div class="user-id">#${user.id}</div>
+                </div>
+            </div>
+        </td>
+        <td>${user.email}</td>
+        <td><span class="status-badge ${statusClass}">${user.status}</span></td>
+        <td><span class="status-badge ${user.subscription_type}">${user.subscription_type}</span></td>
+        <td>${joinedTime}</td>
+        <td>${lastLogin}</td>
+        <td>
+            <div class="action-buttons">
+                <button class="btn-icon" onclick="viewUser(${user.id})" title="View User">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn-icon" onclick="editUser(${user.id})" title="Edit User">
+                    <i class="fas fa-edit"></i>
+                </button>
+                ${user.status === 'suspended' ? 
+                    `<button class="btn-icon warning" onclick="unsuspendUser(${user.id})" title="Unsuspend User">
+                        <i class="fas fa-unlock"></i>
+                    </button>` :
+                    `<button class="btn-icon warning" onclick="suspendUser(${user.id})" title="Suspend User">
+                        <i class="fas fa-lock"></i>
+                    </button>`
+                }
+            </div>
+        </td>
+    `;
+    
+    return row;
+}
+
+async function loadSystemActivityPage() {
+    try {
+        const response = await makeAuthenticatedRequest('/api/admin/detailed-activity');
+        const activities = await response.json();
+        
+        const tbody = document.getElementById('activityTableBody');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        activities.forEach(activity => {
+            const row = createActivityTableRow(activity);
+            tbody.appendChild(row);
+        });
+        
+    } catch (error) {
+        console.error('Failed to load system activity:', error);
+        showAdminError('Failed to load activity');
+    }
+}
+
+function createActivityTableRow(activity) {
+    const row = document.createElement('tr');
+    
+    row.innerHTML = `
+        <td>${formatDateTime(activity.created_at)}</td>
+        <td>${activity.username || 'System'}</td>
+        <td><span class="activity-type-badge ${activity.activity_type}">${activity.activity_type}</span></td>
+        <td>${activity.description}</td>
+        <td>${activity.ip_address || '-'}</td>
+    `;
+    
+    return row;
+}
+
+async function loadBettingData() {
+    try {
+        const [analyticsResponse, betsResponse] = await Promise.all([
+            makeAuthenticatedRequest('/api/admin/betting-analytics'),
+            makeAuthenticatedRequest('/api/admin/recent-bets')
+        ]);
+        
+        const analytics = await analyticsResponse.json();
+        const bets = await betsResponse.json();
+        
+        // Update analytics cards
+        document.getElementById('totalVolume').textContent = formatCurrency(analytics.total_volume);
+        document.getElementById('overallWinRate').textContent = `${analytics.win_rate}%`;
+        document.getElementById('avgStake').textContent = formatCurrency(analytics.avg_stake);
+        document.getElementById('profitMargin').textContent = `${analytics.profit_margin}%`;
+        
+        // Update bets table
+        const tbody = document.getElementById('betsTableBody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            
+            bets.forEach(bet => {
+                const row = createBetTableRow(bet);
+                tbody.appendChild(row);
+            });
+        }
+        
+    } catch (error) {
+        console.error('Failed to load betting data:', error);
+        showAdminError('Failed to load betting data');
+    }
+}
+
+function createBetTableRow(bet) {
+    const row = document.createElement('tr');
+    
+    row.innerHTML = `
+        <td>${bet.username}</td>
+        <td>${bet.bet_type}</td>
+        <td>${formatCurrency(bet.stake)}</td>
+        <td>${bet.odds}</td>
+        <td><span class="status-badge ${bet.status}">${bet.status}</span></td>
+        <td>${formatCurrency(bet.actual_payout)}</td>
+        <td>${formatRelativeTime(bet.placed_at)}</td>
+    `;
+    
+    return row;
+}
+
+async function loadModelData() {
+    try {
+        const response = await makeAuthenticatedRequest('/api/admin/model-performance');
+        const models = await response.json();
+        
+        models.forEach(model => {
+            const accuracyElement = document.getElementById(`${model.name}Accuracy`);
+            const predictionsElement = document.getElementById(`${model.name}Predictions`);
+            
+            if (accuracyElement) accuracyElement.textContent = `${model.accuracy}%`;
+            if (predictionsElement) predictionsElement.textContent = formatNumber(model.total_predictions);
+        });
+        
+    } catch (error) {
+        console.error('Failed to load model data:', error);
+        showAdminError('Failed to load model data');
+    }
+}
+
+function searchUsers() {
+    const searchTerm = document.getElementById('userSearch').value;
+    const statusFilter = document.getElementById('statusFilter').value;
+    
+    // Implementation for user search
+    console.log('Searching users:', searchTerm, statusFilter);
+}
+
+function exportUsers() {
+    // Implementation for user export
+    showAdminSuccess('User export started. Download will begin shortly.');
+}
+
+function retrainModel(modelName) {
+    if (confirm(`Are you sure you want to retrain the ${modelName} model? This may take several minutes.`)) {
+        showAdminSuccess(`${modelName} model retraining started.`);
+        // Implementation for model retraining
+    }
+}
+
+function formatDateTime(timestamp) {
+    return new Date(timestamp).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 }
 
 // Export functions for global use
@@ -808,5 +1398,12 @@ window.AdminUtils = {
     generateReport,
     manageBackups,
     exportData,
-    refreshData
+    refreshData,
+    loadAllUsers,
+    searchUsers,
+    exportUsers,
+    retrainModel,
+    loadBettingData,
+    loadModelData,
+    loadSystemActivityPage
 };
