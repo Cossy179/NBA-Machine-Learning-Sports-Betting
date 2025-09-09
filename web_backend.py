@@ -824,6 +824,37 @@ def user_betting_history():
     
     return jsonify([dict(bet) for bet in bets])
 
+@app.route('/api/notifications', methods=['GET'])
+@login_required
+def get_notifications():
+    """Get user notifications"""
+    user_id = g.current_user['id']
+    
+    notifications = query_db('''
+        SELECT * FROM notifications 
+        WHERE user_id = ? OR user_id IS NULL
+        ORDER BY created_at DESC 
+        LIMIT 20
+    ''', [user_id])
+    
+    return jsonify([dict(notification) for notification in notifications])
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@login_required
+def mark_notification_read(notification_id):
+    """Mark notification as read"""
+    user_id = g.current_user['id']
+    
+    try:
+        execute_db(
+            'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?',
+            [notification_id, user_id]
+        )
+        return jsonify({'message': 'Notification marked as read'})
+    except sqlite3.Error as e:
+        logger.error(f"Error marking notification as read: {e}")
+        return jsonify({'error': 'Failed to mark notification as read'}), 500
+
 # Admin endpoints
 @app.route('/api/admin/overview', methods=['GET'])
 @login_required

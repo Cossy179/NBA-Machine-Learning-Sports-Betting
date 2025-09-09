@@ -203,85 +203,10 @@
                         </div>
                     </div>
                     
-                    <div class="games-list">
-                        <div class="game-card">
-                            <div class="game-header">
-                                <div class="game-time">7:30 PM EST</div>
-                                <div class="confidence-badge high">89% Confidence</div>
-                            </div>
-                            <div class="game-matchup">
-                                <div class="team away">
-                                    <div class="team-logo">LAL</div>
-                                    <div class="team-info">
-                                        <div class="team-name">Lakers</div>
-                                        <div class="team-record">25-15</div>
-                                    </div>
-                                    <div class="team-odds">-110</div>
-                                </div>
-                                <div class="vs">@</div>
-                                <div class="team home">
-                                    <div class="team-logo">GSW</div>
-                                    <div class="team-info">
-                                        <div class="team-name">Warriors</div>
-                                        <div class="team-record">22-18</div>
-                                    </div>
-                                    <div class="team-odds">+105</div>
-                                </div>
-                            </div>
-                            <div class="game-prediction">
-                                <div class="prediction-result">
-                                    <i class="fas fa-trophy"></i>
-                                    Lakers Win
-                                </div>
-                                <div class="prediction-details">
-                                    <span>Predicted Score: 112-108</span>
-                                    <span>O/U: 220.5 (Over)</span>
-                                </div>
-                            </div>
-                            <div class="game-actions">
-                                <button class="btn btn-outline btn-sm" onclick="viewGameAnalysis('lal-gsw')">View Analysis</button>
-                                <button class="btn btn-primary btn-sm" onclick="placeBet('lal-gsw')">Track Bet</button>
-                            </div>
-                        </div>
-
-                        <div class="game-card">
-                            <div class="game-header">
-                                <div class="game-time">8:00 PM EST</div>
-                                <div class="confidence-badge medium">74% Confidence</div>
-                            </div>
-                            <div class="game-matchup">
-                                <div class="team away">
-                                    <div class="team-logo">BOS</div>
-                                    <div class="team-info">
-                                        <div class="team-name">Celtics</div>
-                                        <div class="team-record">28-12</div>
-                                    </div>
-                                    <div class="team-odds">-125</div>
-                                </div>
-                                <div class="vs">@</div>
-                                <div class="team home">
-                                    <div class="team-logo">MIA</div>
-                                    <div class="team-info">
-                                        <div class="team-name">Heat</div>
-                                        <div class="team-record">20-20</div>
-                                    </div>
-                                    <div class="team-odds">+115</div>
-                                </div>
-                            </div>
-                            <div class="game-prediction">
-                                <div class="prediction-result">
-                                    <i class="fas fa-trophy"></i>
-                                    Celtics Win
-                                </div>
-                                <div class="prediction-details">
-                                    <span>Predicted Score: 118-114</span>
-                                    <span>O/U: 232.5 (Under)</span>
-                                </div>
-                            </div>
-                            <div class="game-actions">
-                                <button class="btn btn-outline btn-sm" onclick="viewGameAnalysis('bos-mia')">View Analysis</button>
-                                <button class="btn btn-primary btn-sm" onclick="placeBet('bos-mia')">Track Bet</button>
-                            </div>
+                    <div class="games-list" id="gamesList">
+                        <div class="loading-message">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            Loading today's games...
                         </div>
                     </div>
                 </div>

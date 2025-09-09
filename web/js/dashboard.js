@@ -481,7 +481,7 @@ function initializeWithDefaults() {
 
 // Update games list
 function updateGamesList(games) {
-    const gamesList = document.querySelector('.games-list');
+    const gamesList = document.getElementById('gamesList');
     if (!gamesList) return;
     
     console.log('Updating games list with:', games);
@@ -639,10 +639,51 @@ function initPageNavigation() {
             const page = this.getAttribute('data-page');
             navigateToPage(page);
             
-            // Update active state
+            // Update active state for sidebar navigation
             document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
             this.closest('.nav-item').classList.add('active');
+            
+            // Update active state for mobile navigation
+            document.querySelectorAll('.mobile-nav-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('data-page') === page) {
+                    item.classList.add('active');
+                }
+            });
         });
+    });
+    
+    // Set initial active state based on current page
+    const currentPage = getCurrentPage();
+    setActiveNavigation(currentPage);
+}
+
+// Get current page from URL or default to dashboard
+function getCurrentPage() {
+    const hash = window.location.hash;
+    if (hash) {
+        return hash.substring(1);
+    }
+    return 'dashboard';
+}
+
+// Set active navigation state
+function setActiveNavigation(page) {
+    // Update sidebar navigation
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+        const link = item.querySelector('.nav-link[data-page]');
+        if (link && link.getAttribute('data-page') === page) {
+            item.classList.add('active');
+        }
+    });
+    
+    // Update mobile navigation
+    document.querySelectorAll('.mobile-nav-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-page') === page) {
+            item.classList.add('active');
+        }
     });
 }
 
@@ -652,8 +693,12 @@ function navigateToPage(page) {
     const pageTitle = document.querySelector('.page-title');
     const pageSubtitle = document.querySelector('.page-subtitle');
     
-    // Update URL without reload
-    history.pushState({page}, '', `#${page}`);
+    // Update URL without hash for dashboard
+    if (page === 'dashboard' || !page) {
+        history.pushState({page: 'dashboard'}, '', window.location.pathname);
+    } else {
+        history.pushState({page}, '', `#${page}`);
+    }
     
     // Update page title and content
     switch (page) {
@@ -710,55 +755,77 @@ function initMobileNavigation() {
             const page = this.getAttribute('data-page');
             navigateToPage(page);
             
-            // Update active state
-            document.querySelectorAll('.mobile-nav-item').forEach(nav => nav.classList.remove('active'));
-            this.classList.add('active');
+            // Update active state for both mobile and sidebar navigation
+            setActiveNavigation(page);
         });
     });
 }
 
 // Notifications
 function initNotifications() {
-    const notificationsBtn = document.querySelector('.notifications-btn');
-    const notificationPanel = document.getElementById('notificationPanel');
+    // Load notifications immediately
+    loadNotifications();
     
-    if (notificationsBtn) {
-        notificationsBtn.addEventListener('click', function() {
-            notificationPanel.classList.toggle('active');
-            loadNotifications();
-        });
-    }
+    const notificationPanel = document.getElementById('notificationPanel');
     
     // Close notifications when clicking outside
     document.addEventListener('click', function(e) {
-        // Guard for pages without notifications UI
-        if (!notificationPanel || !notificationsBtn) return;
-        if (!notificationPanel.contains(e.target) && !notificationsBtn.contains(e.target)) {
+        const notificationsBtn = document.querySelector('.notifications-btn');
+        if (notificationPanel && !notificationPanel.contains(e.target) && notificationsBtn && !notificationsBtn.contains(e.target)) {
             notificationPanel.classList.remove('active');
         }
     });
+}
+
+function toggleNotifications() {
+    const notificationPanel = document.getElementById('notificationPanel');
+    if (notificationPanel) {
+        notificationPanel.classList.toggle('active');
+        if (notificationPanel.classList.contains('active')) {
+            loadNotifications();
+        }
+    }
 }
 
 // Load notifications
 async function loadNotifications() {
     try {
         const response = await makeAuthenticatedRequest('/api/notifications');
-        const notifications = await response.json();
         
-        updateNotificationsList(notifications);
-        updateNotificationBadge(notifications.filter(n => !n.read).length);
+        if (response && response.ok) {
+            const notifications = await response.json();
+            updateNotificationsList(notifications);
+            updateNotificationBadge(notifications.filter(n => !n.read).length);
+        } else {
+            // No notifications or error
+            updateNotificationsList([]);
+            updateNotificationBadge(0);
+        }
         
     } catch (error) {
         console.error('Failed to load notifications:', error);
+        // Set empty notifications on error
+        updateNotificationsList([]);
+        updateNotificationBadge(0);
     }
 }
 
 // Update notifications list
 function updateNotificationsList(notifications) {
-    const notificationList = document.querySelector('.notification-list');
+    const notificationList = document.getElementById('notificationList');
     if (!notificationList) return;
     
     notificationList.innerHTML = '';
+    
+    if (!notifications || notifications.length === 0) {
+        notificationList.innerHTML = `
+            <div class="empty-notifications">
+                <i class="fas fa-bell-slash"></i>
+                <p>No notifications yet</p>
+            </div>
+        `;
+        return;
+    }
     
     notifications.forEach(notification => {
         const notificationItem = createNotificationItem(notification);
@@ -1062,83 +1129,192 @@ function loadPredictionsPage() {
     const content = document.getElementById('dashboardContent');
     content.innerHTML = `
         <div class="predictions-page">
-            <div class="page-header">
-                <h2>AI Predictions</h2>
-                <div class="page-actions">
-                    <button class="btn btn-outline btn-sm" onclick="refreshPredictions()">
-                        <i class="fas fa-refresh"></i>
-                        Refresh
+            <!-- Floating Prediction Orbs Background -->
+            <div class="prediction-orbs">
+                <div class="orb orb-1"></div>
+                <div class="orb orb-2"></div>
+                <div class="orb orb-3"></div>
+                <div class="orb orb-4"></div>
+                <div class="orb orb-5"></div>
+            </div>
+            
+            <!-- Hero Section -->
+            <div class="predictions-hero">
+                <div class="hero-content">
+                    <div class="hero-badge">
+                        <i class="fas fa-brain"></i>
+                        <span>AI-Powered</span>
+                    </div>
+                    <h1 class="hero-title">Today's Predictions</h1>
+                    <p class="hero-subtitle">Advanced machine learning models analyzing thousands of data points</p>
+                </div>
+                
+                <div class="accuracy-display">
+                    <div class="accuracy-circle">
+                        <div class="accuracy-value">68.9%</div>
+                        <div class="accuracy-label">Model Accuracy</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filter Controls -->
+            <div class="prediction-controls">
+                <div class="control-group">
+                    <div class="filter-chip active" data-confidence="all">
+                        <i class="fas fa-star"></i>
+                        All Predictions
+                    </div>
+                    <div class="filter-chip" data-confidence="high">
+                        <i class="fas fa-fire"></i>
+                        High Confidence
+                    </div>
+                    <div class="filter-chip" data-confidence="medium">
+                        <i class="fas fa-chart-line"></i>
+                        Medium Confidence
+                    </div>
+                    <div class="filter-chip" data-confidence="low">
+                        <i class="fas fa-info-circle"></i>
+                        Low Confidence
+                    </div>
+                </div>
+                
+                <div class="control-actions">
+                    <button class="btn btn-primary btn-glow" onclick="refreshPredictions()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh Predictions
                     </button>
                 </div>
             </div>
             
-            <div class="predictions-grid">
-                <div class="prediction-filters">
-                    <select id="confidenceFilter" class="form-select">
-                        <option value="">All Confidence</option>
-                        <option value="high">High (80%+)</option>
-                        <option value="medium">Medium (60-79%)</option>
-                        <option value="low">Low (<60%)</option>
-                    </select>
-                    <select id="betTypeFilter" class="form-select">
-                        <option value="">All Bet Types</option>
-                        <option value="moneyline">Moneyline</option>
-                        <option value="spread">Point Spread</option>
-                        <option value="total">Over/Under</option>
-                    </select>
-                </div>
-                
-                <div class="predictions-list" id="predictionsList">
-                    <div class="loading-message">Loading predictions...</div>
+            <!-- Predictions Grid -->
+            <div class="predictions-container">
+                <div class="predictions-grid" id="predictionsGrid">
+                    <div class="prediction-loading">
+                        <div class="loading-spinner-large"></div>
+                        <p>Analyzing games with AI...</p>
+                    </div>
                 </div>
             </div>
         </div>
     `;
     
     loadPredictionsData();
+    initPredictionFilters();
 }
 
 function loadParlaysPage() {
     const content = document.getElementById('dashboardContent');
     content.innerHTML = `
         <div class="parlays-page">
-            <div class="page-header">
-                <h2>Parlay Builder</h2>
-                <div class="page-actions">
-                    <button class="btn btn-primary btn-sm" onclick="clearParlay()">
-                        <i class="fas fa-trash"></i>
-                        Clear All
-                    </button>
+            <!-- Animated Background -->
+            <div class="parlay-background">
+                <div class="floating-shapes">
+                    <div class="shape shape-1"></div>
+                    <div class="shape shape-2"></div>
+                    <div class="shape shape-3"></div>
+                    <div class="shape shape-4"></div>
                 </div>
             </div>
             
-            <div class="parlay-builder">
-                <div class="available-games">
-                    <h3>Available Games</h3>
-                    <div class="games-grid" id="availableGames">
-                        <div class="loading-message">Loading games...</div>
+            <!-- Hero Section -->
+            <div class="parlay-hero">
+                <div class="hero-content">
+                    <div class="hero-badge pulse">
+                        <i class="fas fa-layer-group"></i>
+                        <span>Parlay Builder</span>
                     </div>
+                    <h1 class="hero-title gradient-text">Build Your Perfect Parlay</h1>
+                    <p class="hero-subtitle">Combine multiple bets for bigger payouts with AI-powered correlation analysis</p>
                 </div>
                 
-                <div class="parlay-slip">
-                    <h3>Your Parlay</h3>
-                    <div class="parlay-legs" id="parlayLegs">
-                        <div class="empty-parlay">
-                            <i class="fas fa-layer-group"></i>
-                            <p>Add games to build your parlay</p>
+                <div class="parlay-stats">
+                    <div class="stat-bubble">
+                        <div class="stat-number">2.5x</div>
+                        <div class="stat-label">Avg Payout</div>
+                    </div>
+                    <div class="stat-bubble">
+                        <div class="stat-number">73%</div>
+                        <div class="stat-label">Success Rate</div>
+                    </div>
+                    <div class="stat-bubble">
+                        <div class="stat-number">5+</div>
+                        <div class="stat-label">Max Legs</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Parlay Builder Interface -->
+            <div class="parlay-builder-container">
+                <div class="builder-section games-section">
+                    <div class="section-header-fancy">
+                        <div class="header-icon">
+                            <i class="fas fa-basketball-ball"></i>
+                        </div>
+                        <div class="header-content">
+                            <h3>Available Games</h3>
+                            <p>Select games to add to your parlay</p>
                         </div>
                     </div>
                     
-                    <div class="parlay-summary" id="parlaySummary" style="display: none;">
-                        <div class="summary-row">
-                            <span>Total Odds:</span>
-                            <span id="totalOdds">+0</span>
+                    <div class="games-carousel" id="availableGamesCarousel">
+                        <div class="carousel-loading">
+                            <div class="loading-pulse"></div>
+                            <p>Loading available games...</p>
                         </div>
-                        <div class="summary-row">
-                            <span>Potential Payout:</span>
-                            <span id="potentialPayout">$0.00</span>
+                    </div>
+                </div>
+                
+                <div class="builder-section parlay-section">
+                    <div class="section-header-fancy">
+                        <div class="header-icon active">
+                            <i class="fas fa-layer-group"></i>
                         </div>
-                        <button class="btn btn-primary" onclick="trackParlay()">Track Parlay</button>
+                        <div class="header-content">
+                            <h3>Your Parlay</h3>
+                            <p id="parlayCount">0 selections</p>
+                        </div>
+                        <button class="clear-btn" onclick="clearParlay()" style="display: none;">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="parlay-slip-container">
+                        <div class="parlay-legs" id="parlayLegs">
+                            <div class="empty-parlay-state">
+                                <div class="empty-icon">
+                                    <i class="fas fa-plus-circle"></i>
+                                </div>
+                                <h4>Start Building</h4>
+                                <p>Select games from the left to build your parlay</p>
+                            </div>
+                        </div>
+                        
+                        <div class="parlay-calculator" id="parlayCalculator" style="display: none;">
+                            <div class="calculator-header">
+                                <i class="fas fa-calculator"></i>
+                                <span>Parlay Calculator</span>
+                            </div>
+                            
+                            <div class="calculation-rows">
+                                <div class="calc-row">
+                                    <span>Total Odds:</span>
+                                    <span class="odds-value" id="totalOdds">+0</span>
+                                </div>
+                                <div class="calc-row">
+                                    <span>Bet Amount:</span>
+                                    <input type="number" id="parlayBetAmount" class="bet-input" placeholder="$0.00" min="1" step="0.01">
+                                </div>
+                                <div class="calc-row highlight">
+                                    <span>Potential Payout:</span>
+                                    <span class="payout-value" id="potentialPayout">$0.00</span>
+                                </div>
+                            </div>
+                            
+                            <button class="btn btn-primary btn-glow full-width" onclick="trackParlay()">
+                                <i class="fas fa-rocket"></i>
+                                Track This Parlay
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1146,46 +1322,176 @@ function loadParlaysPage() {
     `;
     
     loadParlayData();
+    initParlayBuilder();
 }
 
 function loadAnalyticsPage() {
     const content = document.getElementById('dashboardContent');
     content.innerHTML = `
         <div class="analytics-page">
-            <div class="page-header">
-                <h2>Performance Analytics</h2>
-                <div class="time-range-selector">
-                    <button class="time-btn active" data-range="7d">7D</button>
-                    <button class="time-btn" data-range="30d">30D</button>
-                    <button class="time-btn" data-range="90d">90D</button>
-                    <button class="time-btn" data-range="1y">1Y</button>
+            <!-- Particle System Background -->
+            <div class="analytics-background">
+                <div class="particle-system">
+                    <div class="particle"></div>
+                    <div class="particle"></div>
+                    <div class="particle"></div>
+                    <div class="particle"></div>
+                    <div class="particle"></div>
+                    <div class="particle"></div>
                 </div>
             </div>
             
-            <div class="analytics-grid">
-                <div class="chart-section">
-                    <h3>Profit/Loss Chart</h3>
-                    <canvas id="profitLossChart"></canvas>
+            <!-- Analytics Hero -->
+            <div class="analytics-hero">
+                <div class="hero-content">
+                    <div class="hero-badge glow">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Analytics Hub</span>
+                    </div>
+                    <h1 class="hero-title">Performance Analytics</h1>
+                    <p class="hero-subtitle">Deep insights into your betting performance with advanced metrics</p>
                 </div>
                 
-                <div class="performance-stats">
-                    <h3>Performance Metrics</h3>
-                    <div class="metrics-grid">
-                        <div class="metric-item">
-                            <div class="metric-label">Win Rate</div>
+                <div class="time-dimension-selector">
+                    <div class="time-btn active" data-range="7d">
+                        <span class="time-label">7D</span>
+                        <span class="time-desc">Last Week</span>
+                    </div>
+                    <div class="time-btn" data-range="30d">
+                        <span class="time-label">30D</span>
+                        <span class="time-desc">Last Month</span>
+                    </div>
+                    <div class="time-btn" data-range="90d">
+                        <span class="time-label">90D</span>
+                        <span class="time-desc">Quarter</span>
+                    </div>
+                    <div class="time-btn" data-range="1y">
+                        <span class="time-label">1Y</span>
+                        <span class="time-desc">Year</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Performance Dashboard -->
+            <div class="analytics-dashboard">
+                <!-- Key Metrics Row -->
+                <div class="metrics-showcase">
+                    <div class="metric-card primary">
+                        <div class="metric-icon">
+                            <i class="fas fa-percentage"></i>
+                        </div>
+                        <div class="metric-content">
                             <div class="metric-value" id="analyticsWinRate">0%</div>
+                            <div class="metric-label">Win Rate</div>
+                            <div class="metric-trend positive">
+                                <i class="fas fa-arrow-up"></i>
+                                <span>+2.3%</span>
+                            </div>
                         </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Total Bets</div>
+                        <div class="metric-sparkline">
+                            <canvas id="winRateSparkline" width="100" height="30"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card success">
+                        <div class="metric-icon">
+                            <i class="fas fa-dollar-sign"></i>
+                        </div>
+                        <div class="metric-content">
+                            <div class="metric-value" id="analyticsTotalProfit">$0</div>
+                            <div class="metric-label">Total Profit</div>
+                            <div class="metric-trend positive">
+                                <i class="fas fa-arrow-up"></i>
+                                <span>+15.2%</span>
+                            </div>
+                        </div>
+                        <div class="metric-sparkline">
+                            <canvas id="profitSparkline" width="100" height="30"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card info">
+                        <div class="metric-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="metric-content">
                             <div class="metric-value" id="analyticsTotalBets">0</div>
+                            <div class="metric-label">Total Bets</div>
+                            <div class="metric-trend neutral">
+                                <i class="fas fa-minus"></i>
+                                <span>No change</span>
+                            </div>
                         </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Avg Bet Size</div>
-                            <div class="metric-value" id="analyticsAvgBet">$0</div>
+                        <div class="metric-sparkline">
+                            <canvas id="betsSparkline" width="100" height="30"></canvas>
                         </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Best Streak</div>
+                    </div>
+                    
+                    <div class="metric-card warning">
+                        <div class="metric-icon">
+                            <i class="fas fa-fire"></i>
+                        </div>
+                        <div class="metric-content">
                             <div class="metric-value" id="analyticsBestStreak">0</div>
+                            <div class="metric-label">Best Streak</div>
+                            <div class="metric-trend positive">
+                                <i class="fas fa-arrow-up"></i>
+                                <span>Personal Best</span>
+                            </div>
+                        </div>
+                        <div class="metric-sparkline">
+                            <canvas id="streakSparkline" width="100" height="30"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Main Chart Section -->
+                <div class="chart-showcase">
+                    <div class="chart-container-fancy">
+                        <div class="chart-header">
+                            <h3>Performance Over Time</h3>
+                            <div class="chart-controls">
+                                <button class="chart-btn active" data-chart="profit">Profit/Loss</button>
+                                <button class="chart-btn" data-chart="winrate">Win Rate</button>
+                                <button class="chart-btn" data-chart="volume">Bet Volume</button>
+                            </div>
+                        </div>
+                        <div class="chart-canvas-container">
+                            <canvas id="mainAnalyticsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Insights Section -->
+                <div class="insights-section">
+                    <div class="insights-header">
+                        <i class="fas fa-lightbulb"></i>
+                        <h3>AI Insights</h3>
+                    </div>
+                    
+                    <div class="insights-grid">
+                        <div class="insight-card">
+                            <div class="insight-icon">🎯</div>
+                            <div class="insight-content">
+                                <h4>Betting Pattern</h4>
+                                <p>You perform best on games with 70%+ confidence. Consider focusing on high-confidence predictions.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="insight-card">
+                            <div class="insight-icon">📈</div>
+                            <div class="insight-content">
+                                <h4>Optimal Bet Size</h4>
+                                <p>Your Kelly Criterion suggests betting 2-4% of bankroll for optimal long-term growth.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="insight-card">
+                            <div class="insight-icon">⚡</div>
+                            <div class="insight-content">
+                                <h4>Best Time to Bet</h4>
+                                <p>Your win rate is highest on evening games. Consider this timing for future bets.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1194,6 +1500,7 @@ function loadAnalyticsPage() {
     `;
     
     loadAnalyticsData();
+    initAnalyticsInteractions();
 }
 
 function loadHistoryPage() {
@@ -1991,3 +2298,78 @@ window.saveUserSettings = saveUserSettings;
 window.toggleFaq = toggleFaq;
 window.openLiveChat = openLiveChat;
 window.openDocs = openDocs;
+window.toggleNotifications = toggleNotifications;
+
+// Additional functions for new pages
+function initPredictionFilters() {
+    const filterChips = document.querySelectorAll('.filter-chip');
+    filterChips.forEach(chip => {
+        chip.addEventListener('click', function() {
+            filterChips.forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            
+            const confidence = this.getAttribute('data-confidence');
+            filterPredictions(confidence);
+        });
+    });
+}
+
+function filterPredictions(confidence) {
+    console.log('Filtering predictions by confidence:', confidence);
+    // Implementation for filtering predictions
+}
+
+function initParlayBuilder() {
+    const parlayBetInput = document.getElementById('parlayBetAmount');
+    if (parlayBetInput) {
+        parlayBetInput.addEventListener('input', calculateParlayPayout);
+    }
+}
+
+function calculateParlayPayout() {
+    const betAmount = parseFloat(document.getElementById('parlayBetAmount').value) || 0;
+    const totalOdds = document.getElementById('totalOdds').textContent;
+    
+    // Simple calculation for demo
+    let multiplier = 1;
+    if (totalOdds.startsWith('+')) {
+        multiplier = (parseFloat(totalOdds.substring(1)) / 100) + 1;
+    }
+    
+    const payout = betAmount * multiplier;
+    document.getElementById('potentialPayout').textContent = formatCurrency(payout);
+}
+
+function initAnalyticsInteractions() {
+    const timeBtns = document.querySelectorAll('.time-btn');
+    timeBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            timeBtns.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            const range = this.getAttribute('data-range');
+            loadAnalyticsForRange(range);
+        });
+    });
+    
+    const chartBtns = document.querySelectorAll('.chart-btn');
+    chartBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            chartBtns.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            
+            const chartType = this.getAttribute('data-chart');
+            loadChartData(chartType);
+        });
+    });
+}
+
+function loadAnalyticsForRange(range) {
+    console.log('Loading analytics for range:', range);
+    // Implementation for loading analytics data for specific range
+}
+
+function loadChartData(chartType) {
+    console.log('Loading chart data for type:', chartType);
+    // Implementation for loading different chart types
+}
