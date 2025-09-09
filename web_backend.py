@@ -961,13 +961,53 @@ def init_database():
     init_db()
     print("Database initialized successfully!")
 
+def validate_admin_password(password):
+    """Validate admin password strength"""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    
+    weak_passwords = ['admin', 'admin123', 'password', '123456', 'password123', 'qwerty', 'abc123']
+    if password.lower() in weak_passwords:
+        return False, "Password is too weak/common"
+    
+    # Check for at least one uppercase, lowercase, digit, and special character
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
+    
+    if not (has_upper and has_lower and has_digit and has_special):
+        return False, "Password must contain uppercase, lowercase, digit, and special character"
+    
+    return True, "Password is strong"
+
 @app.cli.command()
 def create_admin():
-    """Create admin user"""
+    """Create admin user with strong password validation"""
     with app.app_context():
+        print("🔑 Creating Admin User")
+        print("=" * 30)
+        
         username = input("Admin username: ")
         email = input("Admin email: ")
-        password = input("Admin password: ")
+        
+        # Password validation loop
+        while True:
+            password = input("Admin password: ")
+            is_valid, message = validate_admin_password(password)
+            
+            if is_valid:
+                print(f"✅ {message}")
+                break
+            else:
+                print(f"❌ {message}")
+                print("Please try again with a stronger password.")
+        
+        # Confirm password
+        confirm_password = input("Confirm password: ")
+        if password != confirm_password:
+            print("❌ Passwords do not match!")
+            return
         
         password_hash, salt = hash_password(password)
         
@@ -980,9 +1020,11 @@ def create_admin():
                 [username, email, password_hash, salt, 'Admin', 'User', 
                  '1990-01-01', True, True, True, True]
             )
-            print(f"Admin user created successfully with ID: {user_id}")
+            print(f"✅ Admin user created successfully with ID: {user_id}")
+            print(f"   Username: {username}")
+            print(f"   Email: {email}")
         except sqlite3.Error as e:
-            print(f"Error creating admin user: {e}")
+            print(f"❌ Error creating admin user: {e}")
 
 if __name__ == '__main__':
     # Initialize database if it doesn't exist
