@@ -744,6 +744,183 @@ function navigateToPage(page) {
     }
 }
 
+// Load dashboard page content
+function loadDashboardPage() {
+    const content = document.getElementById('dashboardContent');
+    content.innerHTML = `
+        <!-- Overview Cards -->
+        <div class="overview-cards">
+            <div class="overview-card bankroll-card" onclick="showBankrollModal()">
+                <div class="card-header">
+                    <div class="card-title">Total Bankroll</div>
+                    <div class="card-icon">
+                        <i class="fas fa-wallet"></i>
+                    </div>
+                </div>
+                <div class="card-value" id="bankrollValue">$0.00</div>
+                <div class="card-change positive" id="bankrollChange">
+                    <i class="fas fa-edit"></i>
+                    Click to update
+                </div>
+            </div>
+
+            <div class="overview-card">
+                <div class="card-header">
+                    <div class="card-title">Active Bets</div>
+                    <div class="card-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                </div>
+                <div class="card-value" id="activeBetsValue">Loading...</div>
+                <div class="card-change neutral" id="activeBetsChange">
+                    <i class="fas fa-clock"></i>
+                    Loading...
+                </div>
+            </div>
+
+            <div class="overview-card">
+                <div class="card-header">
+                    <div class="card-title">This Week</div>
+                    <div class="card-icon">
+                        <i class="fas fa-trophy"></i>
+                    </div>
+                </div>
+                <div class="card-value" id="thisWeekValue">Loading...</div>
+                <div class="card-change neutral" id="thisWeekChange">
+                    <i class="fas fa-clock"></i>
+                    Loading...
+                </div>
+            </div>
+
+            <div class="overview-card">
+                <div class="card-header">
+                    <div class="card-title">Profit/Loss</div>
+                    <div class="card-icon">
+                        <i class="fas fa-chart-pie"></i>
+                    </div>
+                </div>
+                <div class="card-value" id="profitLossValue">Loading...</div>
+                <div class="card-change neutral" id="profitLossChange">
+                    <i class="fas fa-clock"></i>
+                    Loading...
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Today's Games -->
+            <div class="dashboard-section">
+                <div class="section-header">
+                    <h2 class="section-title">Today's Games</h2>
+                    <div class="section-actions">
+                        <button class="btn btn-outline btn-sm">
+                            <i class="fas fa-filter"></i>
+                            Filter
+                        </button>
+                        <button class="btn btn-primary btn-sm">
+                            <i class="fas fa-refresh"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="games-list" id="gamesList">
+                    <div class="loading-message">
+                        <i class="fas fa-clock"></i>
+                        Loading today's games...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="dashboard-section">
+                <div class="section-header">
+                    <h2 class="section-title">Recent Activity</h2>
+                    <a href="#history" class="section-link">View All</a>
+                </div>
+                
+                <div class="activity-list" id="activityList">
+                    <div class="loading-message">
+                        <i class="fas fa-clock"></i>
+                        Loading recent activity...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Chart -->
+            <div class="dashboard-section chart-section">
+                <div class="section-header">
+                    <h2 class="section-title">Performance Overview</h2>
+                    <div class="chart-controls">
+                        <button class="chart-control active" data-period="7d">7D</button>
+                        <button class="chart-control" data-period="1m">1M</button>
+                        <button class="chart-control" data-period="3m">3M</button>
+                        <button class="chart-control" data-period="1y">1Y</button>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="dashboard-section stats-section">
+                <div class="section-header">
+                    <h2 class="section-title">Quick Stats</h2>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-percentage"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value">68.9%</div>
+                            <div class="stat-label">Overall Win Rate</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value">127</div>
+                            <div class="stat-label">Total Bets</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-fire"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value">7</div>
+                            <div class="stat-label">Win Streak</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-star"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value">4.8</div>
+                            <div class="stat-label">Avg Units Won</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Reinitialize dashboard components
+    loadDashboardData();
+    initCharts();
+}
+
 // Mobile navigation
 function initMobileNavigation() {
     const mobileNavItems = document.querySelectorAll('.mobile-nav-item[data-page]');
@@ -1121,9 +1298,6 @@ function updateChangeIndicator(element, value, suffix = '%', label = '') {
 }
 
 // Page-specific loaders
-function loadDashboardPage() {
-    // Already loaded in initDashboard
-}
 
 function loadPredictionsPage() {
     const content = document.getElementById('dashboardContent');

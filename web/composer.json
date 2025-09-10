@@ -1,0 +1,40 @@
+{
+    "name": "goonsteen/nba-betting-platform",
+    "description": "NBA Sports Betting Platform with AI-powered predictions - PHP Backend",
+    "version": "1.0.0",
+    "type": "project",
+    "keywords": ["nba", "sports-betting", "ai", "predictions", "php"],
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "GoonSteen Development Team",
+            "email": "dev@goonsteen.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-json": "*",
+        "ext-openssl": "*",
+        "ext-curl": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "GoonSteen\\": "classes/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit tests/",
+        "serve": "php -S localhost:8000 index.php"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
