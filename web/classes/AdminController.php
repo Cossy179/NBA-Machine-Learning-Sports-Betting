@@ -118,8 +118,8 @@ class AdminController {
             respondError('User ID required');
         }
         
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         $allowedFields = ['first_name', 'last_name', 'email', 'status', 'subscription_type'];
         $fields = [];
@@ -516,8 +516,8 @@ class AdminController {
     public function updateSettings($params = []) {
         $this->auth->requireAdmin();
         
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         try {
             foreach ($data as $key => $value) {
@@ -631,8 +631,8 @@ class AdminController {
     public function broadcast($params = []) {
         $this->auth->requireAdmin();
         
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         $title = $data['title'] ?? '';
         $content = $data['content'] ?? '';

@@ -1,4 +1,4 @@
-// Authentication JavaScript
+// Authentication JavaScript - Updated for API.php backend
 
 // Auth token management
 function getAuthToken() {
@@ -100,7 +100,7 @@ async function handleLogin(e) {
     showLoading(form);
     
     try {
-        const response = await fetch('/api/login', {
+        const response = await fetch('/api.php?route=api/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -114,6 +114,7 @@ async function handleLogin(e) {
             // Store JWT token and user data
             localStorage.setItem('auth_token', result.token);
             localStorage.setItem('user_data', JSON.stringify(result.user));
+        
             
             // Success - redirect to dashboard
             if (result.user.is_admin) {
@@ -161,7 +162,7 @@ async function handleSignup(e) {
     showLoading(form);
     
     try {
-        const response = await fetch('/api/signup', {
+        const response = await fetch('/api.php?route=api/signup', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -331,7 +332,7 @@ async function validateUsername(username) {
     }
     
     try {
-        const response = await fetch(`/api/check-username?username=${encodeURIComponent(username)}`);
+        const response = await fetch(`/api.php?route=api/check-username&username=${encodeURIComponent(username)}`);
         const result = await response.json();
         
         if (result.available) {
@@ -582,8 +583,20 @@ window.addEventListener('popstate', function(e) {
 
 // Session management
 function checkSession() {
-    makeAuthenticatedRequest('/api/session')
-        .then(response => response.json())
+    const token = getAuthToken();
+    if (!token) {
+        console.log('No token found');
+        return;
+    }
+    
+    makeAuthenticatedRequest('/api.php?route=api/session')
+        .then(response => {
+            if (response && response.ok) {
+                return response.json();
+            } else {
+                throw new Error('Session check failed');
+            }
+        })
         .then(data => {
             if (data.authenticated) {
                 // User is already logged in, redirect to dashboard
@@ -595,13 +608,18 @@ function checkSession() {
             }
         })
         .catch(error => {
-            console.log('No active session');
+            console.log('No active session:', error.message);
+            // Clear invalid auth data
+            clearAuthData();
         });
 }
 
-// Check session on page load (except for signup page)
+// Check session on page load (only if we have a token and it's not expired)
 if (window.location.pathname.includes('login.html')) {
-    checkSession();
+    const token = getAuthToken();
+    if (token && isAuthenticated()) {
+        checkSession();
+    }
 }
 
 // Export functions for global use

@@ -245,64 +245,56 @@ class Database {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         
-        -- Insert default admin user (password: admin123)
-        INSERT OR IGNORE INTO users (
-            username, email, password_hash, salt, first_name, last_name, 
-            date_of_birth, is_admin, email_verified, terms_accepted, responsible_gambling
-        ) VALUES (
-            'admin', 'admin@goonsteen.com', 
-            'pbkdf2:sha256:260000\$salt123\$hash123', 'salt123',
-            'Admin', 'User', '1990-01-01', 1, 1, 1, 1
-        );
-        
-        -- Insert NBA teams
-        INSERT OR IGNORE INTO teams (name, abbreviation, city, conference, division) VALUES
-        ('Atlanta Hawks', 'ATL', 'Atlanta', 'Eastern', 'Southeast'),
-        ('Boston Celtics', 'BOS', 'Boston', 'Eastern', 'Atlantic'),
-        ('Brooklyn Nets', 'BKN', 'Brooklyn', 'Eastern', 'Atlantic'),
-        ('Charlotte Hornets', 'CHA', 'Charlotte', 'Eastern', 'Southeast'),
-        ('Chicago Bulls', 'CHI', 'Chicago', 'Eastern', 'Central'),
-        ('Cleveland Cavaliers', 'CLE', 'Cleveland', 'Eastern', 'Central'),
-        ('Dallas Mavericks', 'DAL', 'Dallas', 'Western', 'Southwest'),
-        ('Denver Nuggets', 'DEN', 'Denver', 'Western', 'Northwest'),
-        ('Detroit Pistons', 'DET', 'Detroit', 'Eastern', 'Central'),
-        ('Golden State Warriors', 'GSW', 'Golden State', 'Western', 'Pacific'),
-        ('Houston Rockets', 'HOU', 'Houston', 'Western', 'Southwest'),
-        ('Indiana Pacers', 'IND', 'Indiana', 'Eastern', 'Central'),
-        ('LA Clippers', 'LAC', 'Los Angeles', 'Western', 'Pacific'),
-        ('Los Angeles Lakers', 'LAL', 'Los Angeles', 'Western', 'Pacific'),
-        ('Memphis Grizzlies', 'MEM', 'Memphis', 'Western', 'Southwest'),
-        ('Miami Heat', 'MIA', 'Miami', 'Eastern', 'Southeast'),
-        ('Milwaukee Bucks', 'MIL', 'Milwaukee', 'Eastern', 'Central'),
-        ('Minnesota Timberwolves', 'MIN', 'Minnesota', 'Western', 'Northwest'),
-        ('New Orleans Pelicans', 'NOP', 'New Orleans', 'Western', 'Southwest'),
-        ('New York Knicks', 'NYK', 'New York', 'Eastern', 'Atlantic'),
-        ('Oklahoma City Thunder', 'OKC', 'Oklahoma City', 'Western', 'Northwest'),
-        ('Orlando Magic', 'ORL', 'Orlando', 'Eastern', 'Southeast'),
-        ('Philadelphia 76ers', 'PHI', 'Philadelphia', 'Eastern', 'Atlantic'),
-        ('Phoenix Suns', 'PHX', 'Phoenix', 'Western', 'Pacific'),
-        ('Portland Trail Blazers', 'POR', 'Portland', 'Western', 'Northwest'),
-        ('Sacramento Kings', 'SAC', 'Sacramento', 'Western', 'Pacific'),
-        ('San Antonio Spurs', 'SAS', 'San Antonio', 'Western', 'Southwest'),
-        ('Toronto Raptors', 'TOR', 'Toronto', 'Eastern', 'Atlantic'),
-        ('Utah Jazz', 'UTA', 'Utah', 'Western', 'Northwest'),
-        ('Washington Wizards', 'WAS', 'Washington', 'Eastern', 'Southeast');
-        
-        -- Insert default system settings
-        INSERT OR IGNORE INTO system_settings (setting_key, setting_value, setting_type, description, category, is_public) VALUES
-        ('site_name', 'GoonSteen', 'string', 'Website name', 'general', 1),
-        ('site_description', 'NBA Sports Betting AI Platform', 'string', 'Website description', 'general', 1),
-        ('max_login_attempts', '5', 'integer', 'Maximum login attempts before lockout', 'security', 0),
-        ('lockout_duration', '30', 'integer', 'Account lockout duration in minutes', 'security', 0),
-        ('session_timeout', '1440', 'integer', 'Session timeout in minutes', 'security', 0),
-        ('default_bankroll', '1000.00', 'decimal', 'Default bankroll for new users', 'betting', 0),
-        ('min_bet_amount', '1.00', 'decimal', 'Minimum bet amount', 'betting', 1),
-        ('max_bet_amount', '1000.00', 'decimal', 'Maximum bet amount for free users', 'betting', 1),
-        ('kelly_criterion_enabled', 'true', 'boolean', 'Enable Kelly Criterion calculations', 'betting', 1),
-        ('model_update_frequency', '24', 'integer', 'Model update frequency in hours', 'ml', 0);
         ";
         
         $this->connection->exec($schema);
+        
+        // Insert default admin user with proper password hash
+        $salt = bin2hex(random_bytes(16));
+        $passwordHash = hash_pbkdf2('sha256', 'admin123', $salt, 100000, 0, true);
+        
+        $stmt = $this->connection->prepare("
+            INSERT OR IGNORE INTO users 
+            (username, email, password_hash, salt, first_name, last_name, date_of_birth, is_admin, email_verified, terms_accepted, responsible_gambling) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            'admin', 'admin@goonsteen.com', base64_encode($passwordHash), $salt,
+            'Admin', 'User', '1990-01-01', 1, 1, 1, 1
+        ]);
+        
+        // Insert NBA teams
+        $teamsData = [
+            ['Atlanta Hawks', 'ATL', 'Atlanta', 'Eastern', 'Southeast'],
+            ['Boston Celtics', 'BOS', 'Boston', 'Eastern', 'Atlantic'],
+            ['Brooklyn Nets', 'BKN', 'Brooklyn', 'Eastern', 'Atlantic'],
+            ['Charlotte Hornets', 'CHA', 'Charlotte', 'Eastern', 'Southeast'],
+            ['Chicago Bulls', 'CHI', 'Chicago', 'Eastern', 'Central'],
+            ['Cleveland Cavaliers', 'CLE', 'Cleveland', 'Eastern', 'Central'],
+            ['Dallas Mavericks', 'DAL', 'Dallas', 'Western', 'Southwest'],
+            ['Denver Nuggets', 'DEN', 'Denver', 'Western', 'Northwest'],
+            ['Detroit Pistons', 'DET', 'Detroit', 'Eastern', 'Central'],
+            ['Golden State Warriors', 'GSW', 'Golden State', 'Western', 'Pacific']
+        ];
+        
+        $teamStmt = $this->connection->prepare("INSERT OR IGNORE INTO teams (name, abbreviation, city, conference, division) VALUES (?, ?, ?, ?, ?)");
+        foreach ($teamsData as $team) {
+            $teamStmt->execute($team);
+        }
+        
+        // Insert default system settings
+        $settingsData = [
+            ['site_name', 'GoonSteen', 'string', 'Website name', 'general', 1],
+            ['max_login_attempts', '5', 'integer', 'Maximum login attempts', 'security', 0],
+            ['default_bankroll', '1000.00', 'decimal', 'Default bankroll', 'betting', 0],
+            ['kelly_criterion_enabled', 'true', 'boolean', 'Enable Kelly Criterion', 'betting', 1]
+        ];
+        
+        $settingStmt = $this->connection->prepare("INSERT OR IGNORE INTO system_settings (setting_key, setting_value, setting_type, description, category, is_public) VALUES (?, ?, ?, ?, ?, ?)");
+        foreach ($settingsData as $setting) {
+            $settingStmt->execute($setting);
+        }
+        
         logMessage('INFO', 'Basic database schema created');
     }
     
@@ -318,7 +310,12 @@ class Database {
     }
     
     public function fetch($sql, $params = []) {
-        return $this->query($sql, $params)->fetch();
+        $stmt = $this->query($sql, $params);
+        return $stmt->fetch();
+    }
+    
+    public function prepare($sql) {
+        return $this->connection->prepare($sql);
     }
     
     public function fetchAll($sql, $params = []) {

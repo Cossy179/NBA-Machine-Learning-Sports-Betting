@@ -7,9 +7,13 @@
  * Supports all the same endpoints and functionality
  */
 
-// Error reporting for development
+// Start output buffering to prevent unwanted output
+ob_start();
+
+// Error reporting for development - but don't display errors in JSON responses
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
 // Set timezone
 date_default_timezone_set('UTC');
@@ -18,7 +22,12 @@ date_default_timezone_set('UTC');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Max-Age: 86400');
+
+// Only set JSON content type for API requests
+if (isset($_GET['route']) && (strpos($_GET['route'], 'api/') === 0 || strpos($_GET['route'], 'ws/') === 0)) {
+    header('Content-Type: application/json; charset=utf-8');
+}
 
 // Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -27,13 +36,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Include configuration and classes
-require_once 'config.php';
-require_once 'classes/Database.php';
-require_once 'classes/Auth.php';
-require_once 'classes/Router.php';
-require_once 'classes/UserController.php';
-require_once 'classes/AdminController.php';
-require_once 'classes/DashboardController.php';
+try {
+    require_once __DIR__ . '/config.php';
+    require_once __DIR__ . '/classes/Database.php';
+    require_once __DIR__ . '/classes/Auth.php';
+    require_once __DIR__ . '/classes/Router.php';
+    require_once __DIR__ . '/classes/UserController.php';
+    require_once __DIR__ . '/classes/AdminController.php';
+    require_once __DIR__ . '/classes/DashboardController.php';
+} catch (Error $e) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Failed to load required files: ' . $e->getMessage()]);
+    exit();
+}
 
 try {
     // Initialize database
@@ -115,24 +131,60 @@ try {
         return ['message' => 'WebSocket not implemented'];
     });
     
-    // Static file serving (for development)
-    if (!isset($_GET['route']) || $_GET['route'] === '') {
-        // Serve index.html if no route specified
-        if (file_exists('index.html')) {
+    // Get the request path
+    $requestPath = $_GET['route'] ?? '';
+    
+    // If no route specified or empty, serve the main page
+    if (empty($requestPath) || $requestPath === '/') {
+        if (file_exists(__DIR__ . '/index.html')) {
             header('Content-Type: text/html');
-            readfile('index.html');
+            readfile(__DIR__ . '/index.html');
             exit();
         }
     }
     
-    // Handle the request
+    // Handle static files
+    if (!empty($requestPath) && strpos($requestPath, 'api/') !== 0 && strpos($requestPath, 'ws/') !== 0) {
+        $filePath = __DIR__ . '/' . $requestPath;
+        if (file_exists($filePath) && !is_dir($filePath)) {
+            // Serve the static file with appropriate content type
+            $extension = pathinfo($filePath, PATHINFO_EXTENSION);
+            switch ($extension) {
+                case 'html':
+                    header('Content-Type: text/html');
+                    break;
+                case 'css':
+                    header('Content-Type: text/css');
+                    break;
+                case 'js':
+                    header('Content-Type: application/javascript');
+                    break;
+                case 'json':
+                    header('Content-Type: application/json');
+                    break;
+                default:
+                    header('Content-Type: application/octet-stream');
+            }
+            readfile($filePath);
+            exit();
+        }
+    }
+    
+    // Handle the API request
     $router->handleRequest();
     
 } catch (Exception $e) {
     error_log("GoonSteen API Error: " . $e->getMessage());
+    
+    // Clear any output that might have been sent
+    if (ob_get_length()) {
+        ob_clean();
+    }
+    
     http_response_code(500);
+    header('Content-Type: application/json');
     echo json_encode([
         'error' => 'Internal server error',
-        'message' => $e->getMessage()
+        'message' => APP_DEBUG ? $e->getMessage() : 'Server error'
     ]);
 }

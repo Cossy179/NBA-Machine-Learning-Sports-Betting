@@ -13,8 +13,8 @@ class UserController {
     }
     
     public function signup($params = []) {
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         // Validate required fields
         $required = ['first_name', 'last_name', 'username', 'email', 'password', 'age_verification'];
@@ -46,10 +46,9 @@ class UserController {
         }
         
         // Check if user already exists
-        $existing = $this->db->fetch(
-            'SELECT id FROM users WHERE username = ? OR email = ?',
-            [$data['username'], $data['email']]
-        );
+        $stmt = $this->db->getConnection()->prepare('SELECT id FROM users WHERE username = ? OR email = ?');
+        $stmt->execute([$data['username'], $data['email']]);
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing) {
             respondError('Username or email already exists');
@@ -62,21 +61,20 @@ class UserController {
             $this->db->beginTransaction();
             
             // Create user
-            $userId = $this->db->execute(
-                'INSERT INTO users (username, email, password_hash, salt, first_name, last_name, date_of_birth, terms_accepted, marketing_emails, responsible_gambling) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [
-                    $data['username'],
-                    $data['email'],
-                    base64_encode($passwordHash),
-                    $salt,
-                    $data['first_name'],
-                    $data['last_name'],
-                    $birthDate,
-                    !empty($data['terms_accepted']),
-                    !empty($data['marketing_emails']),
-                    !empty($data['responsible_gambling'])
-                ]
-            );
+            $stmt = $this->db->getConnection()->prepare('INSERT INTO users (username, email, password_hash, salt, first_name, last_name, date_of_birth, terms_accepted, marketing_emails, responsible_gambling) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([
+                $data['username'],
+                $data['email'],
+                base64_encode($passwordHash),
+                $salt,
+                $data['first_name'],
+                $data['last_name'],
+                $birthDate,
+                !empty($data['terms_accepted']),
+                !empty($data['marketing_emails']),
+                !empty($data['responsible_gambling'])
+            ]);
+            $userId = $this->db->getConnection()->lastInsertId();
             
             // Create initial bankroll
             $this->db->execute(
@@ -104,8 +102,8 @@ class UserController {
     }
     
     public function login($params = []) {
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         $username = $data['username'] ?? '';
         $password = $data['password'] ?? '';
@@ -116,10 +114,9 @@ class UserController {
         }
         
         // Find user by username or email
-        $user = $this->db->fetch(
-            'SELECT * FROM users WHERE username = ? OR email = ?',
-            [$username, $username]
-        );
+        $stmt = $this->db->getConnection()->prepare('SELECT * FROM users WHERE username = ? OR email = ?');
+        $stmt->execute([$username, $username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user) {
             $this->auth->logActivity(null, 'login_failed', "Login attempt with unknown username: $username");
@@ -278,8 +275,8 @@ class UserController {
         $this->auth->requireAuth();
         $user = $this->auth->getCurrentUser();
         
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         $totalBalance = (float)($data['total_balance'] ?? 0);
         $dailyLimit = (float)($data['daily_limit'] ?? 100);
@@ -315,8 +312,8 @@ class UserController {
         $this->auth->requireAuth();
         $user = $this->auth->getCurrentUser();
         
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         $gameId = $data['game_id'] ?? null;
         $betAmount = (float)($data['bet_amount'] ?? 0);
@@ -375,8 +372,8 @@ class UserController {
         $this->auth->requireAuth();
         $user = $this->auth->getCurrentUser();
         
-        $router = new Router();
-        $data = $router->getJsonInput();
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true) ?: [];
         
         $gameId = $data['game_id'] ?? null;
         $betAmount = (float)($data['bet_amount'] ?? 0);

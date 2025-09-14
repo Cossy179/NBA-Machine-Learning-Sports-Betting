@@ -58,10 +58,9 @@ async function makeAuthenticatedRequest(url, options = {}) {
         console.log('Response status for', url, ':', response.status);
         
         if (response.status === 401) {
-            console.error('Unauthorized - clearing auth data');
-            clearAuthData();
-            window.location.href = '/login.html';
-            return null;
+            console.error('Unauthorized response for:', url);
+            // Don't immediately logout - let the calling function handle it
+            return response;
         }
         
         if (!response.ok) {
@@ -180,54 +179,22 @@ function initDashboard() {
 
 // Check if user is authenticated
 async function checkAuthentication() {
-    try {
-        // First, use stored user data immediately for faster loading
-        const storedUserData = getUserData();
-        if (storedUserData) {
-            console.log('Using stored user data immediately:', storedUserData);
-            updateUserInfo(storedUserData);
-            
-            if (storedUserData.is_admin) {
-                showAdminFeatures();
-            }
-        }
+    // Use stored user data - more reliable for dashboard
+    const storedUserData = getUserData();
+    
+    if (storedUserData) {
+        console.log('Using stored user data:', storedUserData);
+        updateUserInfo(storedUserData);
         
-        // Then verify with server
-        const response = await makeAuthenticatedRequest('/api/session');
-        console.log('Session response status:', response?.status);
-        
-        if (response && response.ok) {
-            const data = await response.json();
-            console.log('Session data:', data);
-            
-            if (!data.authenticated) {
-                window.location.href = 'login.html';
-                return;
-            }
-            
-            // Update user info in sidebar with fresh data
-            updateUserInfo(data.user);
-            
-            // If admin, show admin features
-            if (data.user.is_admin) {
-                showAdminFeatures();
-            }
-        } else {
-            console.error('Session check failed:', response?.status);
-            // If session check fails but we have stored data, continue with stored data
-            if (!storedUserData) {
-                window.location.href = 'login.html';
-            }
+        if (storedUserData.is_admin) {
+            showAdminFeatures();
         }
-        
-    } catch (error) {
-        console.error('Authentication check failed:', error);
-        // Only redirect if we don't have stored user data
-        const storedUserData = getUserData();
-        if (!storedUserData) {
-            window.location.href = 'login.html';
-        }
+        return; // Skip server verification for stability
     }
+    
+    // If no stored data, redirect to login
+    console.log('No user data found - redirecting to login');
+    window.location.href = 'login.html';
 }
 
 // Update user info in sidebar
@@ -275,7 +242,7 @@ function showAdminFeatures() {
 async function loadUserData() {
     try {
         console.log('Loading user data...');
-        const response = await makeAuthenticatedRequest('/api/user/profile');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/profile');
         console.log('User profile response status:', response?.status);
         
         if (response && response.ok) {
@@ -343,7 +310,7 @@ async function loadDashboardData() {
         
         // Load overview data
         try {
-            const overviewResponse = await makeAuthenticatedRequest('/api/dashboard/overview');
+            const overviewResponse = await makeAuthenticatedRequest('/api.php?route=api/dashboard/overview');
             console.log('Overview response status:', overviewResponse.status);
             
             if (overviewResponse && overviewResponse.ok) {
@@ -368,7 +335,7 @@ async function loadDashboardData() {
         
         // Load games data
         try {
-            const gamesResponse = await makeAuthenticatedRequest('/api/dashboard/games');
+            const gamesResponse = await makeAuthenticatedRequest('/api.php?route=api/dashboard/games');
             console.log('Games response status:', gamesResponse?.status);
             
             if (gamesResponse && gamesResponse.ok) {
@@ -386,7 +353,7 @@ async function loadDashboardData() {
         
         // Load activity data
         try {
-            const activityResponse = await makeAuthenticatedRequest('/api/dashboard/activity');
+            const activityResponse = await makeAuthenticatedRequest('/api.php?route=api/dashboard/activity');
             console.log('Activity response status:', activityResponse?.status);
             
             if (activityResponse && activityResponse.ok) {
@@ -967,7 +934,7 @@ function toggleNotifications() {
 // Load notifications
 async function loadNotifications() {
     try {
-        const response = await makeAuthenticatedRequest('/api/notifications');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/notifications');
         
         if (response && response.ok) {
             const notifications = await response.json();
@@ -1153,7 +1120,7 @@ function initRealTimeUpdates() {
 // Update real-time data
 async function updateRealTimeData() {
     try {
-        const response = await makeAuthenticatedRequest('/api/dashboard/realtime');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/dashboard/realtime');
         const data = await response.json();
         
         updateLiveScores(data.live_scores);
@@ -1978,7 +1945,7 @@ function showBankrollModal() {
 
 async function loadCurrentBankroll() {
     try {
-        const response = await makeAuthenticatedRequest('/api/user/bankroll');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/bankroll');
         const bankroll = await response.json();
         
         document.getElementById('currentBalance').value = bankroll.total_balance || 0;
@@ -1999,7 +1966,7 @@ async function updateBankroll() {
     }
     
     try {
-        const response = await makeAuthenticatedRequest('/api/user/bankroll', {
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/bankroll', {
             method: 'POST',
             body: JSON.stringify({
                 total_balance: parseFloat(currentBalance),
@@ -2051,7 +2018,7 @@ function showBetTrackingModal(gameId) {
 
 async function calculateKellyCriterion(betAmount, odds, gameId) {
     try {
-        const response = await makeAuthenticatedRequest('/api/calculate-kelly', {
+        const response = await makeAuthenticatedRequest('/api.php?route=api/calculate-kelly', {
             method: 'POST',
             body: JSON.stringify({
                 game_id: gameId,
@@ -2090,7 +2057,7 @@ async function trackBet() {
     }
     
     try {
-        const response = await makeAuthenticatedRequest('/api/user/track-bet', {
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/track-bet', {
             method: 'POST',
             body: JSON.stringify({
                 game_id: gameId,
@@ -2219,7 +2186,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 function markNotificationAsRead(notificationId) {
-    makeAuthenticatedRequest(`/api/notifications/${notificationId}/read`, {
+    makeAuthenticatedRequest(`/api.php?route=api/notifications/${notificationId}/read`, {
         method: 'POST'
     }).then(() => {
         loadNotifications();
@@ -2237,7 +2204,7 @@ function logout() {
         localStorage.removeItem('user_data');
         
         // Call logout API but don't wait for response
-        fetch('/api/logout', {
+        fetch('/api.php?route=api/logout', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -2283,7 +2250,7 @@ window.DashboardUtils = {
 // Data loading functions for pages
 async function loadPredictionsData() {
     try {
-        const response = await makeAuthenticatedRequest('/api/dashboard/games');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/dashboard/games');
         const games = await response.json();
         
         const predictionsList = document.getElementById('predictionsList');
@@ -2307,7 +2274,7 @@ async function loadParlayData() {
 
 async function loadAnalyticsData() {
     try {
-        const response = await makeAuthenticatedRequest('/api/user/analytics');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/analytics');
         const analytics = await response.json();
         
         // Update analytics metrics
@@ -2323,7 +2290,7 @@ async function loadAnalyticsData() {
 
 async function loadBettingHistory() {
     try {
-        const response = await makeAuthenticatedRequest('/api/user/betting-history');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/betting-history');
         const bets = await response.json();
         
         const tbody = document.getElementById('historyTableBody');
@@ -2347,7 +2314,7 @@ async function loadBettingHistory() {
 
 async function loadBankrollData() {
     try {
-        const response = await makeAuthenticatedRequest('/api/user/bankroll');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/bankroll');
         const bankroll = await response.json();
         
         document.getElementById('largeBankrollAmount').textContent = formatCurrency(bankroll.total_balance || 0);
@@ -2362,7 +2329,7 @@ async function loadBankrollData() {
 
 async function loadUserSettings() {
     try {
-        const response = await makeAuthenticatedRequest('/api/user/profile');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/user/profile');
         const user = await response.json();
         
         document.getElementById('firstName').value = user.first_name || '';

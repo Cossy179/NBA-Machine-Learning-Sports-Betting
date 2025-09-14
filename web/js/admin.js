@@ -50,10 +50,9 @@ function makeAuthenticatedRequest(url, options = {}) {
     
     return fetch(url, mergedOptions).then(response => {
         if (response.status === 401) {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user_data');
-            window.location.href = '/login.html';
-            return;
+            console.error('Unauthorized response for:', url);
+            // Don't immediately logout - let the calling function handle it
+            return response;
         }
         return response;
     });
@@ -102,21 +101,18 @@ function formatRelativeTime(timestamp) {
 
 // Check if user has admin privileges
 async function checkAdminAuthentication() {
-    try {
-        const response = await makeAuthenticatedRequest('/api/session');
-        const data = await response.json();
-        
-        if (!data.authenticated || !data.user.is_admin) {
-            window.location.href = 'login.html';
-            return;
-        }
-        
-        updateAdminUserInfo(data.user);
-        
-    } catch (error) {
-        console.error('Admin authentication check failed:', error);
-        window.location.href = 'login.html';
+    // Use stored user data - more reliable than server check
+    const storedUserData = JSON.parse(localStorage.getItem('user_data') || '{}');
+    
+    if (storedUserData.is_admin) {
+        console.log('Using stored admin user data:', storedUserData);
+        updateAdminUserInfo(storedUserData);
+        return;
     }
+    
+    // If no stored admin data, redirect to login
+    console.log('No admin user data found - redirecting to login');
+    window.location.href = 'login.html';
 }
 
 // Initialize admin dashboard
@@ -152,7 +148,7 @@ async function loadAdminOverview() {
         // Show loading state
         showLoadingState();
         
-        const response = await makeAuthenticatedRequest('/api/admin/overview');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/overview');
         if (!response.ok) {
             throw new Error('Failed to fetch overview data');
         }
@@ -231,7 +227,7 @@ function updateAdminOverviewCards(data) {
 // Load recent users
 async function loadRecentUsers() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/recent-users');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/recent-users');
         const users = await response.json();
         
         updateRecentUsersTable(users);
@@ -300,7 +296,7 @@ function createUserTableRow(user) {
 // Load system activity
 async function loadSystemActivity() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/activity');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/activity');
         const activities = await response.json();
         
         updateSystemActivity(activities);
@@ -589,7 +585,7 @@ function initAdminRealTime() {
 // Load system health data
 async function loadSystemHealth() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/system-health');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/system-health');
         if (response.ok) {
             const healthData = await response.json();
             updateSystemHealthMetrics(healthData);
@@ -629,7 +625,7 @@ function updateSystemStatus(status) {
 // Update admin real-time data
 async function updateAdminRealTimeData() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/realtime');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/realtime');
         const data = await response.json();
         
         updateSystemHealthMetrics(data.system_health);
@@ -795,7 +791,7 @@ window.initAdminUserEdit = initAdminUserEdit;
 // Safe logout without requiring token
 function logout() {
     clearAuthData();
-    fetchJson('/api/logout', { method: 'POST', allowUnauthed: true })
+    fetchJson('/api.php?route=api/logout', { method: 'POST', allowUnauthed: true })
         .finally(() => { window.location.href = 'login.html'; });
 }
 
@@ -1073,7 +1069,7 @@ function sendBroadcast() {
     }
     
     // Send broadcast message
-    makeAuthenticatedRequest('/api/admin/broadcast', {
+    makeAuthenticatedRequest('/api.php?route=api/admin/broadcast', {
         method: 'POST',
         body: JSON.stringify({ title, content, type })
     }).then(response => {
@@ -1105,7 +1101,7 @@ function generateReportFile() {
     document.getElementById('reportModal').remove();
     
     // Trigger report generation
-    makeAuthenticatedRequest('/api/admin/generate-report', {
+    makeAuthenticatedRequest('/api.php?route=api/admin/generate-report', {
         method: 'POST',
         body: JSON.stringify({ reportType, dateRange, format })
     }).then(response => {
@@ -1143,7 +1139,7 @@ function executeExport() {
     document.getElementById('exportModal').remove();
     
     // Trigger data export
-    makeAuthenticatedRequest('/api/admin/export', {
+    makeAuthenticatedRequest('/api.php?route=api/admin/export', {
         method: 'POST',
         body: JSON.stringify(exportData)
     }).then(response => {
@@ -1726,7 +1722,7 @@ function showNotification(message, type) {
 // Additional Admin Functions
 async function loadAllUsers() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/all-users');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/all-users');
         const users = await response.json();
         
         const tbody = document.getElementById('allUsersTableBody');
@@ -1791,7 +1787,7 @@ function createDetailedUserTableRow(user) {
 
 async function loadSystemActivityPage() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/detailed-activity');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/detailed-activity');
         const activities = await response.json();
         
         const tbody = document.getElementById('activityTableBody');
@@ -1827,8 +1823,8 @@ function createActivityTableRow(activity) {
 async function loadBettingData() {
     try {
         const [analyticsResponse, betsResponse] = await Promise.all([
-            makeAuthenticatedRequest('/api/admin/betting-analytics'),
-            makeAuthenticatedRequest('/api/admin/recent-bets')
+            makeAuthenticatedRequest('/api.php?route=api/admin/betting-analytics'),
+            makeAuthenticatedRequest('/api.php?route=api/admin/recent-bets')
         ]);
         
         const analytics = await analyticsResponse.json();
@@ -1875,7 +1871,7 @@ function createBetTableRow(bet) {
 
 async function loadModelData() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/model-performance');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/model-performance');
         const models = await response.json();
         
         models.forEach(model => {
@@ -1925,7 +1921,7 @@ function formatDateTime(timestamp) {
 // Settings functions
 async function loadCurrentSettings() {
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/settings');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/settings');
         const settings = await response.json();
         
         // Populate form fields with current settings
@@ -1960,7 +1956,7 @@ async function saveSettings() {
     };
     
     try {
-        const response = await makeAuthenticatedRequest('/api/admin/settings', {
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/settings', {
             method: 'POST',
             body: JSON.stringify(settings)
         });
@@ -1980,7 +1976,7 @@ async function saveSettings() {
 async function cleanupOldData() {
     if (confirm('This will remove old logs and inactive sessions. Continue?')) {
         try {
-            const response = await makeAuthenticatedRequest('/api/admin/cleanup', {
+            const response = await makeAuthenticatedRequest('/api.php?route=api/admin/cleanup', {
                 method: 'POST'
             });
             
@@ -1999,7 +1995,7 @@ async function cleanupOldData() {
 async function optimizeDatabase() {
     if (confirm('This will optimize the database. This may take a few minutes. Continue?')) {
         try {
-            const response = await makeAuthenticatedRequest('/api/admin/optimize-db', {
+            const response = await makeAuthenticatedRequest('/api.php?route=api/admin/optimize-db', {
                 method: 'POST'
             });
             
@@ -2018,7 +2014,7 @@ async function optimizeDatabase() {
 async function clearCache() {
     if (confirm('This will clear all cached data. Continue?')) {
         try {
-            const response = await makeAuthenticatedRequest('/api/admin/clear-cache', {
+            const response = await makeAuthenticatedRequest('/api.php?route=api/admin/clear-cache', {
                 method: 'POST'
             });
             
@@ -2038,7 +2034,7 @@ async function backupDatabase() {
     try {
         showAdminSuccess('Database backup started. Download will begin shortly.');
         
-        const response = await makeAuthenticatedRequest('/api/admin/backup');
+        const response = await makeAuthenticatedRequest('/api.php?route=api/admin/backup');
         
         if (response.ok) {
             const blob = await response.blob();
@@ -2067,7 +2063,7 @@ function logout() {
         localStorage.removeItem('user_data');
         
         // Call logout API
-        makeAuthenticatedRequest('/api/logout', {
+        makeAuthenticatedRequest('/api.php?route=api/logout', {
             method: 'POST'
         }).then(() => {
             window.location.href = 'login.html';

@@ -1,57 +1,39 @@
 RewriteEngine On
 
-# Enable CORS for all requests
-Header always set Access-Control-Allow-Origin "*"
-Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+# Fix Authorization header for Apache
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# Handle preflight OPTIONS requests
-RewriteCond %{REQUEST_METHOD} OPTIONS
-RewriteRule ^(.*)$ index.php [QSA,L]
-
-# API routes - redirect all API calls to index.php with route parameter
+# API routes - redirect all API calls to api.php with route parameter
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^api/(.*)$ index.php?route=api/$1 [QSA,L]
-
-# WebSocket stubs
-RewriteRule ^ws/(.*)$ index.php?route=ws/$1 [QSA,L]
+RewriteRule ^api/(.*)$ api.php?route=api/$1 [QSA,L]
 
 # Static files - serve directly if they exist
 RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^(.*)$ $1 [L]
 
-# Fallback for other routes to index.php
+# Fallback for other routes to api.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
-
-# Security headers
-Header always set X-Content-Type-Options nosniff
-Header always set X-Frame-Options DENY
-Header always set X-XSS-Protection "1; mode=block"
-
-# Cache control for static assets
-<FilesMatch "\.(css|js|png|jpg|jpeg|gif|ico|svg)$">
-    ExpiresActive On
-    ExpiresDefault "access plus 1 month"
-    Header set Cache-Control "public, max-age=2592000"
-</FilesMatch>
-
-# Prevent access to sensitive files
-<FilesMatch "\.(php|inc|conf|sql|bak|log)$">
-    <RequireAll>
-        Require all denied
-    </RequireAll>
-</FilesMatch>
-
-# Allow access to index.php specifically
-<Files "index.php">
-    Require all granted
-</Files>
+RewriteRule ^(.*)$ api.php?route=$1 [QSA,L]
 
 # Prevent directory browsing
 Options -Indexes
 
-# Set default charset
-AddDefaultCharset UTF-8
+# Block access to sensitive files
+<Files "*.sql">
+    Deny from all
+</Files>
+
+<Files "*.log">
+    Deny from all
+</Files>
+
+<Files "web_database.db">
+    Deny from all
+</Files>
+
+<Files "config.php">
+    Deny from all
+</Files>

@@ -29,16 +29,43 @@ class Auth {
     }
     
     private function getTokenFromRequest() {
-        $headers = getallheaders();
-        if (isset($headers['Authorization'])) {
-            return str_replace('Bearer ', '', $headers['Authorization']);
+        // Try to get Authorization header in multiple ways
+        $authHeader = null;
+        
+        // Method 1: Direct server variable
+        if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+            $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
         }
         
-        // Fallback for case-insensitive headers
-        foreach ($headers as $key => $value) {
-            if (strtolower($key) === 'authorization') {
-                return str_replace('Bearer ', '', $value);
+        // Method 2: getallheaders() if available
+        if (!$authHeader && function_exists('getallheaders')) {
+            $headers = getallheaders();
+            if (isset($headers['Authorization'])) {
+                $authHeader = $headers['Authorization'];
+            } else {
+                // Fallback for case-insensitive headers
+                foreach ($headers as $key => $value) {
+                    if (strtolower($key) === 'authorization') {
+                        $authHeader = $value;
+                        break;
+                    }
+                }
             }
+        }
+        
+        // Method 3: Check all possible server variables
+        if (!$authHeader) {
+            $possibleKeys = ['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'];
+            foreach ($possibleKeys as $key) {
+                if (isset($_SERVER[$key])) {
+                    $authHeader = $_SERVER[$key];
+                    break;
+                }
+            }
+        }
+        
+        if ($authHeader) {
+            return str_replace('Bearer ', '', $authHeader);
         }
         
         return null;

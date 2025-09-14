@@ -10,10 +10,16 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_CHARSET', 'utf8mb4');
 
-// Security configuration
+// Security configuration - production ready
 define('JWT_SECRET', getenv('JWT_SECRET') ?: bin2hex(random_bytes(32)));
-define('JWT_EXPIRATION_HOURS', getenv('JWT_EXPIRATION_HOURS') ?: 24);
+define('JWT_EXPIRATION_HOURS', getenv('JWT_EXPIRATION_HOURS') ?: 8);
 define('SECRET_KEY', getenv('SECRET_KEY') ?: bin2hex(random_bytes(32)));
+
+// Security settings
+define('MAX_LOGIN_ATTEMPTS', 5);
+define('LOCKOUT_DURATION', 1800); // 30 minutes
+define('RATE_LIMIT_WINDOW', 900); // 15 minutes
+define('MAX_REQUESTS_PER_WINDOW', 100);
 
 // Application configuration
 define('APP_ENV', getenv('APP_ENV') ?: 'production');
@@ -61,6 +67,11 @@ function logMessage($level, $message, $context = []) {
 }
 
 function respondJson($data, $statusCode = 200) {
+    // Clear any output that might have been sent
+    if (ob_get_length()) {
+        ob_clean();
+    }
+    
     http_response_code($statusCode);
     header('Content-Type: application/json');
     echo json_encode($data);

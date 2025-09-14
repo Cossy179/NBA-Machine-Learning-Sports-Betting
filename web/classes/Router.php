@@ -58,16 +58,16 @@ class Router {
     }
     
     private function getCurrentPath() {
-        $path = $_SERVER['REQUEST_URI'] ?? '/';
-        
-        // Remove query string
-        if (($pos = strpos($path, '?')) !== false) {
-            $path = substr($path, 0, $pos);
-        }
-        
         // Handle both direct access and with route parameter
         if (isset($_GET['route'])) {
             $path = '/' . ltrim($_GET['route'], '/');
+        } else {
+            $path = $_SERVER['REQUEST_URI'] ?? '/';
+            
+            // Remove query string
+            if (($pos = strpos($path, '?')) !== false) {
+                $path = substr($path, 0, $pos);
+            }
         }
         
         return $path;

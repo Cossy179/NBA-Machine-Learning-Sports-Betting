@@ -1,0 +1,99 @@
+/* Dark Theme Override for Admin Dashboard */
+
+/* Make all admin cards dark with good contrast */
+.admin-card,
+.admin-section,
+.chart-container,
+.admin-table {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Card titles and text */
+.card-title,
+.section-title,
+.admin-card .card-title {
+    color: #f8fafc !important;
+}
+
+/* Card values */
+.card-value,
+.admin-card .card-value {
+    color: #ffffff !important;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+/* Table styling */
+.admin-table th {
+    background: #0f172a !important;
+    color: #f8fafc !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.admin-table td {
+    color: #e2e8f0 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Status badges */
+.status-badge {
+    background: #334155 !important;
+    color: #f8fafc !important;
+}
+
+.status-badge.active {
+    background: #059669 !important;
+    color: white !important;
+}
+
+.status-badge.suspended {
+    background: #dc2626 !important;
+    color: white !important;
+}
+
+/* Quick action buttons */
+.quick-action-btn {
+    background: #334155 !important;
+    color: #f8fafc !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.quick-action-btn:hover {
+    background: #475569 !important;
+    transform: translateY(-2px);
+}
+
+/* Activity feed */
+.activity-feed .activity-item {
+    background: #334155 !important;
+    color: #f8fafc !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Progress bars */
+.card-progress {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.card-progress-fill {
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6) !important;
+}
+
+/* System health metrics */
+.health-metric {
+    background: #334155 !important;
+    color: #f8fafc !important;
+}
+
+.metric-fill.good {
+    background: #059669 !important;
+}
+
+.metric-fill.warning {
+    background: #d97706 !important;
+}
+
+.metric-fill.error {
+    background: #dc2626 !important;
+}
