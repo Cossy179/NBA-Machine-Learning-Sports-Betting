@@ -586,10 +586,9 @@ function initAdminRealTime() {
 async function loadSystemHealth() {
     try {
         const response = await makeAuthenticatedRequest('/api.php?route=api/admin/system-health');
-        if (response.ok) {
-            const healthData = await response.json();
-            updateSystemHealthMetrics(healthData);
-            updateSystemStatus(healthData.status);
+        if (response) {
+            updateSystemHealthMetrics(response);
+            updateSystemStatus(response.status);
         }
     } catch (error) {
         console.error('Failed to load system health:', error);
@@ -1175,6 +1174,7 @@ function updateSystemHealthMetrics(healthData) {
             case 0: // CPU
                 value.textContent = `${healthData.cpu}%`;
                 fill.style.width = `${healthData.cpu}%`;
+                fill.className = `metric-fill ${healthData.cpu > 80 ? (healthData.cpu > 95 ? 'error' : 'warning') : 'good'}`;
                 fill.className = `metric-fill ${getHealthClass(healthData.cpu)}`;
                 break;
             case 1: // Memory

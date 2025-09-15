@@ -5,16 +5,20 @@
 .admin-section,
 .chart-container,
 .admin-table {
-    background: #1e293b !important;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
     color: #f8fafc !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
 }
 
 /* Card titles and text */
 .card-title,
 .section-title,
 .admin-card .card-title {
-    color: #f8fafc !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+    letter-spacing: 0.5px !important;
 }
 
 /* Card values */
@@ -52,16 +56,54 @@
     color: white !important;
 }
 
-/* Quick action buttons */
+/* Quick action buttons - improved readability */
 .quick-action-btn {
-    background: #334155 !important;
-    color: #f8fafc !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
+    color: #ffffff !important;
+    border: 2px solid rgba(59, 130, 246, 0.3) !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+    transition: all 0.3s ease !important;
+    min-height: 120px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
 }
 
 .quick-action-btn:hover {
-    background: #475569 !important;
-    transform: translateY(-2px);
+    background: linear-gradient(135deg, #334155 0%, #475569 100%) !important;
+    border-color: rgba(59, 130, 246, 0.6) !important;
+    transform: translateY(-4px) scale(1.02) !important;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4) !important;
+}
+
+.quick-action-btn .btn-title {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+    margin-bottom: 0.5rem !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7) !important;
+}
+
+.quick-action-btn .btn-description {
+    font-size: 0.9rem !important;
+    color: #e2e8f0 !important;
+    opacity: 0.9 !important;
+    line-height: 1.4 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+.quick-action-btn .btn-icon {
+    font-size: 2rem !important;
+    margin-bottom: 0.75rem !important;
+    color: #3b82f6 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
 /* Activity feed */
@@ -84,16 +126,54 @@
 .health-metric {
     background: #334155 !important;
     color: #f8fafc !important;
+    border-radius: 8px !important;
+    padding: 1rem !important;
+    margin-bottom: 1rem !important;
 }
 
 .metric-fill.good {
-    background: #059669 !important;
+    background: linear-gradient(90deg, #059669, #10b981) !important;
+    box-shadow: 0 0 10px rgba(5, 150, 105, 0.3) !important;
 }
 
 .metric-fill.warning {
-    background: #d97706 !important;
+    background: linear-gradient(90deg, #d97706, #f59e0b) !important;
+    box-shadow: 0 0 10px rgba(217, 119, 6, 0.3) !important;
 }
 
 .metric-fill.error {
-    background: #dc2626 !important;
+    background: linear-gradient(90deg, #dc2626, #ef4444) !important;
+    box-shadow: 0 0 10px rgba(220, 38, 38, 0.3) !important;
+}
+
+/* Chart improvements */
+.chart-container {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    border-radius: 16px !important;
+    padding: 2rem !important;
+}
+
+/* Performance metrics selector */
+.metric-selector {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+    padding: 0.5rem !important;
+    margin-bottom: 1.5rem !important;
+}
+
+.metric-selector button {
+    background: transparent !important;
+    color: #e2e8f0 !important;
+    border: none !important;
+    padding: 0.75rem 1.5rem !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    transition: all 0.3s ease !important;
+}
+
+.metric-selector button.active {
+    background: rgba(59, 130, 246, 0.2) !important;
+    color: #3b82f6 !important;
+    border: 1px solid rgba(59, 130, 246, 0.4) !important;
 }

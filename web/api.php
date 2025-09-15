@@ -580,12 +580,75 @@ try {
         respondJson([]);
     }
     
-    // Admin chart data
+    // Admin chart data - real metrics
     if ($method === 'GET' && $path === 'api/admin/chart-data') {
-        $metric = $_GET['metric'] ?? 'users';
+        $metric = sanitizeInput($_GET['metric'] ?? 'users');
+        
+        // Get real data based on metric type
+        if ($metric === 'users') {
+            // Get user registrations for last 7 days
+            $stmt = $pdo->prepare('
+                SELECT 
+                    strftime("%w", created_at) as day_of_week,
+                    COUNT(*) as count
+                FROM users 
+                WHERE created_at >= date("now", "-7 days")
+                GROUP BY strftime("%w", created_at)
+                ORDER BY day_of_week
+            ');
+            $stmt->execute();
+            $data = $stmt->fetchAll();
+            
+            // Fill in missing days with 0
+            $values = array_fill(0, 7, 0);
+            foreach ($data as $row) {
+                $values[$row['day_of_week']] = (int)$row['count'];
+            }
+            
+        } elseif ($metric === 'bets') {
+            // Get bets placed for last 7 days
+            $stmt = $pdo->prepare('
+                SELECT 
+                    strftime("%w", placed_at) as day_of_week,
+                    COUNT(*) as count
+                FROM bets 
+                WHERE placed_at >= date("now", "-7 days")
+                GROUP BY strftime("%w", placed_at)
+                ORDER BY day_of_week
+            ');
+            $stmt->execute();
+            $data = $stmt->fetchAll();
+            
+            $values = array_fill(0, 7, 0);
+            foreach ($data as $row) {
+                $values[$row['day_of_week']] = (int)$row['count'];
+            }
+            
+        } else { // revenue
+            // Get revenue for last 7 days (mock for now - would be subscription revenue)
+            $stmt = $pdo->prepare('
+                SELECT 
+                    strftime("%w", created_at) as day_of_week,
+                    COUNT(*) * 29.99 as revenue
+                FROM users 
+                WHERE created_at >= date("now", "-7 days") 
+                AND subscription_type = "premium"
+                GROUP BY strftime("%w", created_at)
+                ORDER BY day_of_week
+            ');
+            $stmt->execute();
+            $data = $stmt->fetchAll();
+            
+            $values = array_fill(0, 7, 0);
+            foreach ($data as $row) {
+                $values[$row['day_of_week']] = round((float)$row['revenue'], 2);
+            }
+        }
+        
         respondJson([
             'labels' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-            'values' => [1, 2, 1, 3, 2, 1, 2]
+            'values' => $values,
+            'metric' => $metric
         ]);
     }
     
