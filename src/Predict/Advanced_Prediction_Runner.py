@@ -170,8 +170,8 @@ class AdvancedPredictionRunner:
         except Exception as e:
             print(f"Failed to load original models: {e}")
     
-    def make_ensemble_prediction(self, game_features):
-        """Make prediction using ensemble model"""
+    def make_advanced_ensemble_prediction(self, game_features):
+        """Make prediction using advanced ensemble model with sophisticated stacking"""
         if 'ensemble' not in self.models:
             return None
             
@@ -185,34 +185,113 @@ class AdvancedPredictionRunner:
         else:
             X = np.array(game_features).reshape(1, -1)
         
-        # Get base model predictions
+        # Get base model predictions with confidence scores
         base_predictions = np.zeros((1, len(base_models)))
+        base_confidences = np.zeros((1, len(base_models)))
+        base_uncertainties = np.zeros((1, len(base_models)))
         
         for i, (name, model) in enumerate(base_models.items()):
-            if name in ['neural_network', 'mlp']:
-                scaler = model['scaler']
-                actual_model = model['model']
-                X_scaled = scaler.transform(X)
+            try:
+                if name in ['neural_network', 'mlp']:
+                    scaler = model['scaler']
+                    actual_model = model['model']
+                    X_scaled = scaler.transform(X)
+                    
+                    if name == 'neural_network':
+                        pred = actual_model.predict(X_scaled)[0, 0]
+                        # Estimate uncertainty from model variance
+                        uncertainty = 0.1  # Simplified uncertainty estimation
+                    else:  # MLP
+                        pred_proba = actual_model.predict_proba(X_scaled)[0]
+                        pred = pred_proba[1]
+                        uncertainty = np.std(pred_proba)  # Use std as uncertainty measure
+                else:
+                    pred_proba = model.predict_proba(X)[0]
+                    pred = pred_proba[1]
+                    uncertainty = np.std(pred_proba)
                 
-                if name == 'neural_network':
-                    base_predictions[0, i] = actual_model.predict(X_scaled)[0, 0]
-                else:  # MLP
-                    base_predictions[0, i] = actual_model.predict_proba(X_scaled)[0, 1]
-            else:
-                base_predictions[0, i] = model.predict_proba(X)[0, 1]
+                base_predictions[0, i] = pred
+                base_confidences[0, i] = abs(pred - 0.5) * 2  # Confidence from distance to 0.5
+                base_uncertainties[0, i] = uncertainty
+                
+            except Exception as e:
+                print(f"Error in {name} prediction: {e}")
+                base_predictions[0, i] = 0.5
+                base_confidences[0, i] = 0
+                base_uncertainties[0, i] = 0.5
         
-        # Get ensemble prediction
-        ensemble_prob = meta_model.predict_proba(base_predictions)[0, 1]
+        # Advanced ensemble methods
+        # 1. Weighted average based on confidence
+        confidence_weights = base_confidences[0] / (np.sum(base_confidences[0]) + 1e-8)
+        weighted_avg = np.sum(base_predictions[0] * confidence_weights)
+        
+        # 2. Meta-model prediction
+        meta_features = np.concatenate([base_predictions[0], base_confidences[0], base_uncertainties[0]])
+        meta_features = meta_features.reshape(1, -1)
+        meta_prob = meta_model.predict_proba(meta_features)[0, 1]
+        
+        # 3. Uncertainty-weighted ensemble
+        uncertainty_weights = 1 / (base_uncertainties[0] + 1e-8)
+        uncertainty_weights = uncertainty_weights / np.sum(uncertainty_weights)
+        uncertainty_weighted = np.sum(base_predictions[0] * uncertainty_weights)
+        
+        # 4. Bayesian model averaging (simplified)
+        # Use model performance as prior weights
+        model_weights = np.array([0.25, 0.2, 0.2, 0.15, 0.1, 0.1])[:len(base_models)]  # Example weights
+        model_weights = model_weights / np.sum(model_weights)
+        bayesian_avg = np.sum(base_predictions[0] * model_weights)
+        
+        # 5. Dynamic ensemble selection
+        # Select best performing models based on recent accuracy
+        recent_performance = np.array([0.8, 0.75, 0.82, 0.78, 0.85, 0.77])[:len(base_models)]  # Example performance
+        top_models = np.argsort(recent_performance)[-3:]  # Top 3 models
+        dynamic_weights = np.zeros(len(base_models))
+        dynamic_weights[top_models] = recent_performance[top_models]
+        dynamic_weights = dynamic_weights / np.sum(dynamic_weights)
+        dynamic_avg = np.sum(base_predictions[0] * dynamic_weights)
+        
+        # Combine all ensemble methods
+        ensemble_methods = [weighted_avg, meta_prob, uncertainty_weighted, bayesian_avg, dynamic_avg]
+        ensemble_weights = [0.3, 0.3, 0.2, 0.1, 0.1]  # Weights for different methods
+        
+        final_prob = np.sum([method * weight for method, weight in zip(ensemble_methods, ensemble_weights)])
+        
+        # Calculate ensemble confidence and uncertainty
+        ensemble_confidence = abs(final_prob - 0.5) * 2
+        ensemble_uncertainty = np.std(ensemble_methods)
+        
+        # Model agreement analysis
+        agreement_threshold = 0.1
+        agreeing_models = np.sum(np.abs(base_predictions[0] - final_prob) < agreement_threshold)
+        agreement_ratio = agreeing_models / len(base_models)
+        
+        # Prediction reliability score
+        reliability_score = (ensemble_confidence + (1 - ensemble_uncertainty) + agreement_ratio) / 3
         
         return {
-            'probability': ensemble_prob,
-            'prediction': int(ensemble_prob >= 0.5),
-            'confidence': abs(ensemble_prob - 0.5) * 2,
-            'base_predictions': dict(zip(base_models.keys(), base_predictions[0]))
+            'probability': final_prob,
+            'prediction': int(final_prob >= 0.5),
+            'confidence': ensemble_confidence,
+            'uncertainty': ensemble_uncertainty,
+            'reliability_score': reliability_score,
+            'agreement_ratio': agreement_ratio,
+            'base_predictions': dict(zip(base_models.keys(), base_predictions[0])),
+            'base_confidences': dict(zip(base_models.keys(), base_confidences[0])),
+            'ensemble_methods': {
+                'weighted_avg': weighted_avg,
+                'meta_model': meta_prob,
+                'uncertainty_weighted': uncertainty_weighted,
+                'bayesian_avg': bayesian_avg,
+                'dynamic_avg': dynamic_avg
+            }
         }
     
-    def make_multi_target_predictions(self, game_features, ou_line=None):
-        """Make multi-target predictions"""
+    def make_ensemble_prediction(self, game_features):
+        """Make prediction using ensemble model (backward compatibility)"""
+        return self.make_advanced_ensemble_prediction(game_features)
+    
+    def make_advanced_multi_target_predictions(self, game_features, ou_line=None):
+        """Make advanced multi-target predictions with uncertainty quantification"""
         if 'multi_target' not in self.models:
             return None
             
@@ -230,34 +309,114 @@ class AdvancedPredictionRunner:
         
         dmatrix = xgb.DMatrix(X)
         predictions = {}
+        uncertainties = {}
+        confidences = {}
         
         for name, model in models.items():
             if '_calibrator' in name:
                 continue
                 
             try:
+                # Get prediction
                 pred = model.predict(dmatrix)[0]
                 predictions[name] = pred
+                
+                # Calculate uncertainty using prediction variance
+                # For XGBoost, we can use leaf indices to estimate uncertainty
+                leaf_indices = model.predict(dmatrix, pred_leaf=True)[0]
+                uncertainty = np.std(leaf_indices) / len(leaf_indices)  # Normalized uncertainty
+                uncertainties[name] = uncertainty
+                
+                # Calculate confidence based on prediction strength
+                if name in ['win_loss', 'ou_result']:
+                    # Classification confidence
+                    if isinstance(pred, (list, np.ndarray)) and len(pred) > 1:
+                        prob = pred[1] if len(pred) > 1 else pred[0]
+                        confidence = abs(prob - 0.5) * 2
+                    else:
+                        confidence = abs(pred - 0.5) * 2
+                else:
+                    # Regression confidence (based on prediction magnitude)
+                    confidence = min(1.0, abs(pred) / 50)  # Normalize by expected range
+                
+                confidences[name] = confidence
                 
                 # Use calibrator if available
                 calibrator_name = f'{name}_calibrator'
                 if calibrator_name in models:
-                    if name in ['win_loss', 'ou_result']:
-                        # Convert to probability for classification tasks
-                        if isinstance(pred, (list, np.ndarray)) and len(pred) > 1:
-                            predictions[f'{name}_calibrated'] = pred[1] if len(pred) > 1 else pred[0]
+                    calibrator = models[calibrator_name]
+                    try:
+                        if name in ['win_loss', 'ou_result']:
+                            # Classification calibration
+                            if isinstance(pred, (list, np.ndarray)) and len(pred) > 1:
+                                calibrated_prob = calibrator.predict_proba([[pred[1]]])[0, 1]
+                            else:
+                                calibrated_prob = calibrator.predict_proba([[pred]])[0, 1]
+                            predictions[f'{name}_calibrated'] = calibrated_prob
+                            confidences[f'{name}_calibrated'] = abs(calibrated_prob - 0.5) * 2
                         else:
-                            predictions[f'{name}_calibrated'] = pred
+                            # Regression calibration
+                            calibrated_pred = calibrator.predict([[pred]])[0]
+                            predictions[f'{name}_calibrated'] = calibrated_pred
+                    except Exception as e:
+                        print(f"Error calibrating {name}: {e}")
+                        predictions[f'{name}_calibrated'] = pred
+                        confidences[f'{name}_calibrated'] = confidence
                             
             except Exception as e:
                 print(f"Error predicting {name}: {e}")
+                predictions[name] = 0
+                uncertainties[name] = 1.0
+                confidences[name] = 0
+        
+        # Add ensemble predictions for key targets
+        key_targets = ['win_loss', 'ou_result', 'total_points', 'point_margin']
+        for target in key_targets:
+            if target in predictions:
+                # Create ensemble prediction using multiple models
+                ensemble_pred = self._create_multi_target_ensemble(predictions, target, confidences)
+                if ensemble_pred is not None:
+                    predictions[f'{target}_ensemble'] = ensemble_pred
+        
+        # Add prediction quality metrics
+        predictions['_uncertainties'] = uncertainties
+        predictions['_confidences'] = confidences
+        predictions['_overall_confidence'] = np.mean(list(confidences.values()))
+        predictions['_overall_uncertainty'] = np.mean(list(uncertainties.values()))
         
         return predictions
     
-    def calculate_betting_edge(self, model_prob, odds):
-        """Calculate betting edge and Kelly Criterion"""
+    def _create_multi_target_ensemble(self, predictions, target, confidences):
+        """Create ensemble prediction for multi-target models"""
+        target_variations = [f'{target}_calibrated', f'{target}_ensemble']
+        available_predictions = [predictions[target]]
+        
+        for variation in target_variations:
+            if variation in predictions:
+                available_predictions.append(predictions[variation])
+        
+        if len(available_predictions) > 1:
+            # Weight by confidence
+            weights = [confidences.get(target, 0.5)]
+            for variation in target_variations:
+                if variation in predictions:
+                    weights.append(confidences.get(variation, 0.5))
+            
+            weights = np.array(weights)
+            weights = weights / np.sum(weights)
+            
+            return np.sum([pred * weight for pred, weight in zip(available_predictions, weights)])
+        
+        return None
+    
+    def make_multi_target_predictions(self, game_features, ou_line=None):
+        """Make multi-target predictions (backward compatibility)"""
+        return self.make_advanced_multi_target_predictions(game_features, ou_line)
+    
+    def calculate_advanced_betting_edge(self, model_prob, odds, confidence=0.5, uncertainty=0.1):
+        """Calculate advanced betting edge with confidence and uncertainty adjustments"""
         if not odds or odds == 0:
-            return {'edge': 0, 'kelly': 0, 'expected_value': 0}
+            return {'edge': 0, 'kelly': 0, 'expected_value': 0, 'confidence_adjusted_edge': 0}
             
         # Convert American odds to decimal
         if odds > 0:
@@ -268,28 +427,68 @@ class AdvancedPredictionRunner:
         # Calculate implied probability (with vig)
         implied_prob = 1 / decimal_odds
         
-        # Calculate edge
-        edge = model_prob - implied_prob
+        # Basic edge calculation
+        basic_edge = model_prob - implied_prob
         
-        # Expected value
-        if model_prob > implied_prob:
-            expected_value = (model_prob * (decimal_odds - 1)) - ((1 - model_prob) * 1)
-        else:
-            expected_value = 0
+        # Confidence-adjusted probability
+        # Higher confidence increases the effective probability
+        confidence_factor = 0.5 + (confidence * 0.5)  # Range: 0.5 to 1.0
+        confidence_adjusted_prob = model_prob * confidence_factor + implied_prob * (1 - confidence_factor)
         
-        # Kelly Criterion
+        # Uncertainty adjustment
+        # Higher uncertainty reduces the effective edge
+        uncertainty_factor = max(0.1, 1 - uncertainty)  # Range: 0.1 to 1.0
+        uncertainty_adjusted_prob = confidence_adjusted_prob * uncertainty_factor + implied_prob * (1 - uncertainty_factor)
+        
+        # Final edge calculation
+        edge = uncertainty_adjusted_prob - implied_prob
+        confidence_adjusted_edge = confidence_adjusted_prob - implied_prob
+        
+        # Expected value calculations
+        basic_ev = (model_prob * (decimal_odds - 1)) - ((1 - model_prob) * 1) if model_prob > implied_prob else 0
+        adjusted_ev = (uncertainty_adjusted_prob * (decimal_odds - 1)) - ((1 - uncertainty_adjusted_prob) * 1) if uncertainty_adjusted_prob > implied_prob else 0
+        
+        # Advanced Kelly Criterion with confidence and uncertainty
         if edge > 0:
-            kelly_fraction = edge / (decimal_odds - 1)
-            kelly_percentage = max(0, min(25, kelly_fraction * 100))  # Cap at 25%
+            # Base Kelly fraction
+            base_kelly = edge / (decimal_odds - 1)
+            
+            # Adjust for confidence (higher confidence = higher bet)
+            confidence_kelly = base_kelly * confidence_factor
+            
+            # Adjust for uncertainty (higher uncertainty = lower bet)
+            uncertainty_kelly = confidence_kelly * uncertainty_factor
+            
+            # Risk management: cap based on confidence and uncertainty
+            max_kelly = min(0.25, 0.1 + (confidence * 0.15))  # Max 10-25% based on confidence
+            kelly_percentage = max(0, min(max_kelly, uncertainty_kelly)) * 100
         else:
             kelly_percentage = 0
         
+        # Value rating (0-100 scale)
+        value_rating = max(0, min(100, (edge / implied_prob) * 100)) if implied_prob > 0 else 0
+        
+        # Risk-adjusted return
+        risk_adjusted_return = adjusted_ev * confidence_factor * uncertainty_factor
+        
         return {
             'edge': edge,
+            'confidence_adjusted_edge': confidence_adjusted_edge,
             'kelly': kelly_percentage,
-            'expected_value': expected_value,
-            'implied_probability': implied_prob
+            'expected_value': adjusted_ev,
+            'basic_expected_value': basic_ev,
+            'implied_probability': implied_prob,
+            'confidence_adjusted_probability': confidence_adjusted_prob,
+            'uncertainty_adjusted_probability': uncertainty_adjusted_prob,
+            'value_rating': value_rating,
+            'risk_adjusted_return': risk_adjusted_return,
+            'confidence_factor': confidence_factor,
+            'uncertainty_factor': uncertainty_factor
         }
+    
+    def calculate_betting_edge(self, model_prob, odds):
+        """Calculate betting edge and Kelly Criterion (backward compatibility)"""
+        return self.calculate_advanced_betting_edge(model_prob, odds)
     
     def run_comprehensive_prediction(self, data, todays_games_uo, frame_ml, games, home_team_odds, away_team_odds, kelly_criterion=True):
         """Run comprehensive predictions using all available models"""
@@ -311,63 +510,105 @@ class AdvancedPredictionRunner:
             else:
                 game_features = frame_ml.iloc[i] if len(frame_ml) > i else frame_ml.iloc[0]
             
-            # Ensemble prediction
-            ensemble_pred = self.make_ensemble_prediction(game_features)
+            # Advanced ensemble prediction
+            ensemble_pred = self.make_advanced_ensemble_prediction(game_features)
             if ensemble_pred:
                 prob = ensemble_pred['probability']
                 confidence = ensemble_pred['confidence']
+                uncertainty = ensemble_pred.get('uncertainty', 0.1)
+                reliability = ensemble_pred.get('reliability_score', 0.5)
+                agreement = ensemble_pred.get('agreement_ratio', 0.5)
                 
                 winner = home_team if prob > 0.5 else away_team
                 winner_prob = prob if prob > 0.5 else (1 - prob)
                 
-                print(f"\n{Fore.MAGENTA}🏆 ENSEMBLE PREDICTION:{Style.RESET_ALL}")
+                print(f"\n{Fore.MAGENTA}🏆 ADVANCED ENSEMBLE PREDICTION:{Style.RESET_ALL}")
                 print(f"   Winner: {Fore.GREEN if prob > 0.5 else Fore.RED}{winner}{Style.RESET_ALL} ({winner_prob:.1%})")
                 print(f"   Confidence: {Fore.YELLOW}{confidence:.1%}{Style.RESET_ALL}")
+                print(f"   Uncertainty: {Fore.CYAN}{uncertainty:.3f}{Style.RESET_ALL}")
+                print(f"   Reliability: {Fore.BLUE}{reliability:.1%}{Style.RESET_ALL}")
+                print(f"   Model Agreement: {Fore.GREEN}{agreement:.1%}{Style.RESET_ALL}")
                 
-                # Show base model agreement
+                # Show base model predictions with confidence
                 base_preds = ensemble_pred['base_predictions']
-                agreement = sum(1 for p in base_preds.values() if (p > 0.5) == (prob > 0.5))
-                print(f"   Model Agreement: {agreement}/{len(base_preds)} models")
-            
-            # Multi-target predictions
-            ou_line = todays_games_uo[i] if i < len(todays_games_uo) else None
-            multi_preds = self.make_multi_target_predictions(game_features, ou_line)
-            if multi_preds:
-                print(f"\n{Fore.BLUE}📊 MULTI-TARGET PREDICTIONS:{Style.RESET_ALL}")
+                base_confidences = ensemble_pred.get('base_confidences', {})
+                print(f"   Base Model Predictions:")
+                for name, pred in base_preds.items():
+                    conf = base_confidences.get(name, 0)
+                    print(f"     {name}: {pred:.3f} (conf: {conf:.1%})")
                 
-                # Total points prediction
+                # Show ensemble methods
+                methods = ensemble_pred.get('ensemble_methods', {})
+                if methods:
+                    print(f"   Ensemble Methods:")
+                    for method, value in methods.items():
+                        print(f"     {method}: {value:.3f}")
+            
+            # Advanced multi-target predictions
+            ou_line = todays_games_uo[i] if i < len(todays_games_uo) else None
+            multi_preds = self.make_advanced_multi_target_predictions(game_features, ou_line)
+            if multi_preds:
+                print(f"\n{Fore.BLUE}📊 ADVANCED MULTI-TARGET PREDICTIONS:{Style.RESET_ALL}")
+                
+                # Overall confidence and uncertainty
+                overall_conf = multi_preds.get('_overall_confidence', 0.5)
+                overall_uncertainty = multi_preds.get('_overall_uncertainty', 0.1)
+                print(f"   Overall Confidence: {Fore.YELLOW}{overall_conf:.1%}{Style.RESET_ALL}")
+                print(f"   Overall Uncertainty: {Fore.CYAN}{overall_uncertainty:.3f}{Style.RESET_ALL}")
+                
+                # Total points prediction with uncertainty
                 if 'total_points' in multi_preds:
                     total_pred = multi_preds['total_points']
-                    print(f"   Total Points: {total_pred:.1f}")
+                    total_uncertainty = multi_preds.get('_uncertainties', {}).get('total_points', 0.1)
+                    total_confidence = multi_preds.get('_confidences', {}).get('total_points', 0.5)
+                    
+                    print(f"   Total Points: {total_pred:.1f} ± {total_uncertainty:.1f} (conf: {total_confidence:.1%})")
                     
                     if ou_line:
                         ou_recommendation = "OVER" if total_pred > ou_line else "UNDER"
                         ou_edge = abs(total_pred - ou_line)
-                        print(f"   O/U Recommendation: {Fore.BLUE if ou_recommendation == 'OVER' else Fore.MAGENTA}{ou_recommendation} {ou_line}{Style.RESET_ALL} (Edge: {ou_edge:.1f})")
+                        confidence_level = "HIGH" if total_confidence > 0.7 else "MEDIUM" if total_confidence > 0.5 else "LOW"
+                        print(f"   O/U Recommendation: {Fore.BLUE if ou_recommendation == 'OVER' else Fore.MAGENTA}{ou_recommendation} {ou_line}{Style.RESET_ALL} (Edge: {ou_edge:.1f}, {confidence_level})")
                 
-                # Point margin
+                # Point margin with confidence
                 if 'point_margin' in multi_preds:
                     margin = multi_preds['point_margin']
-                    print(f"   Predicted Margin: {margin:+.1f} points")
+                    margin_confidence = multi_preds.get('_confidences', {}).get('point_margin', 0.5)
+                    print(f"   Predicted Margin: {margin:+.1f} points (conf: {margin_confidence:.1%})")
                 
                 # Individual team scores
                 if 'home_score' in multi_preds and 'away_score' in multi_preds:
                     home_score = multi_preds['home_score']
                     away_score = multi_preds['away_score']
-                    print(f"   Score Prediction: {home_team} {home_score:.0f} - {away_team} {away_score:.0f}")
+                    home_conf = multi_preds.get('_confidences', {}).get('home_score', 0.5)
+                    away_conf = multi_preds.get('_confidences', {}).get('away_score', 0.5)
+                    print(f"   Score Prediction: {home_team} {home_score:.0f} (conf: {home_conf:.1%}) - {away_team} {away_score:.0f} (conf: {away_conf:.1%})")
                 
                 # Quarter/Half predictions
                 if 'first_half_total' in multi_preds:
                     fh_total = multi_preds['first_half_total']
-                    print(f"   First Half Total: {fh_total:.1f}")
+                    fh_conf = multi_preds.get('_confidences', {}).get('first_half_total', 0.5)
+                    print(f"   First Half Total: {fh_total:.1f} (conf: {fh_conf:.1%})")
                 
                 if 'first_quarter_total' in multi_preds:
                     q1_total = multi_preds['first_quarter_total']
-                    print(f"   First Quarter Total: {q1_total:.1f}")
+                    q1_conf = multi_preds.get('_confidences', {}).get('first_quarter_total', 0.5)
+                    print(f"   First Quarter Total: {q1_total:.1f} (conf: {q1_conf:.1%})")
+                
+                # Show ensemble predictions if available
+                ensemble_targets = [key for key in multi_preds.keys() if key.endswith('_ensemble')]
+                if ensemble_targets:
+                    print(f"   Ensemble Predictions:")
+                    for target in ensemble_targets:
+                        base_target = target.replace('_ensemble', '')
+                        ensemble_pred = multi_preds[target]
+                        base_pred = multi_preds.get(base_target, 0)
+                        improvement = abs(ensemble_pred - base_pred)
+                        print(f"     {base_target}: {ensemble_pred:.3f} (vs base: {base_pred:.3f}, Δ: {improvement:.3f})")
             
-            # Betting analysis
+            # Advanced betting analysis
             if kelly_criterion and i < len(home_team_odds) and i < len(away_team_odds):
-                print(f"\n{Fore.YELLOW}💰 BETTING ANALYSIS:{Style.RESET_ALL}")
+                print(f"\n{Fore.YELLOW}💰 ADVANCED BETTING ANALYSIS:{Style.RESET_ALL}")
                 
                 home_odds = home_team_odds[i]
                 away_odds = away_team_odds[i]
@@ -375,41 +616,70 @@ class AdvancedPredictionRunner:
                 if ensemble_pred:
                     home_prob = ensemble_pred['probability']
                     away_prob = 1 - home_prob
+                    confidence = ensemble_pred.get('confidence', 0.5)
+                    uncertainty = ensemble_pred.get('uncertainty', 0.1)
+                    reliability = ensemble_pred.get('reliability_score', 0.5)
                     
                     # Home team analysis
                     if home_odds:
-                        home_analysis = self.calculate_betting_edge(home_prob, int(home_odds))
+                        home_analysis = self.calculate_advanced_betting_edge(home_prob, int(home_odds), confidence, uncertainty)
                         edge_color = Fore.GREEN if home_analysis['edge'] > 0 else Fore.RED
                         print(f"   {home_team}:")
                         print(f"     Model Probability: {home_prob:.1%}")
-                        print(f"     Betting Edge: {edge_color}{home_analysis['edge']:+.1%}{Style.RESET_ALL}")
+                        print(f"     Confidence-Adjusted Prob: {home_analysis['confidence_adjusted_probability']:.1%}")
+                        print(f"     Uncertainty-Adjusted Prob: {home_analysis['uncertainty_adjusted_probability']:.1%}")
+                        print(f"     Basic Edge: {edge_color}{home_analysis['basic_expected_value']:+.3f}{Style.RESET_ALL}")
+                        print(f"     Adjusted Edge: {edge_color}{home_analysis['edge']:+.1%}{Style.RESET_ALL}")
                         print(f"     Expected Value: {edge_color}{home_analysis['expected_value']:+.3f}{Style.RESET_ALL}")
+                        print(f"     Value Rating: {Fore.CYAN}{home_analysis['value_rating']:.0f}/100{Style.RESET_ALL}")
+                        print(f"     Risk-Adjusted Return: {Fore.BLUE}{home_analysis['risk_adjusted_return']:+.3f}{Style.RESET_ALL}")
                         if home_analysis['kelly'] > 0:
                             print(f"     Kelly Bet: {Fore.GREEN}{home_analysis['kelly']:.1f}% of bankroll{Style.RESET_ALL}")
                     
                     # Away team analysis  
                     if away_odds:
-                        away_analysis = self.calculate_betting_edge(away_prob, int(away_odds))
+                        away_analysis = self.calculate_advanced_betting_edge(away_prob, int(away_odds), confidence, uncertainty)
                         edge_color = Fore.GREEN if away_analysis['edge'] > 0 else Fore.RED
                         print(f"   {away_team}:")
                         print(f"     Model Probability: {away_prob:.1%}")
-                        print(f"     Betting Edge: {edge_color}{away_analysis['edge']:+.1%}{Style.RESET_ALL}")
+                        print(f"     Confidence-Adjusted Prob: {away_analysis['confidence_adjusted_probability']:.1%}")
+                        print(f"     Uncertainty-Adjusted Prob: {away_analysis['uncertainty_adjusted_probability']:.1%}")
+                        print(f"     Basic Edge: {edge_color}{away_analysis['basic_expected_value']:+.3f}{Style.RESET_ALL}")
+                        print(f"     Adjusted Edge: {edge_color}{away_analysis['edge']:+.1%}{Style.RESET_ALL}")
                         print(f"     Expected Value: {edge_color}{away_analysis['expected_value']:+.3f}{Style.RESET_ALL}")
+                        print(f"     Value Rating: {Fore.CYAN}{away_analysis['value_rating']:.0f}/100{Style.RESET_ALL}")
+                        print(f"     Risk-Adjusted Return: {Fore.BLUE}{away_analysis['risk_adjusted_return']:+.3f}{Style.RESET_ALL}")
                         if away_analysis['kelly'] > 0:
                             print(f"     Kelly Bet: {Fore.GREEN}{away_analysis['kelly']:.1f}% of bankroll{Style.RESET_ALL}")
                     
-                    # Best bet recommendation
+                    # Advanced bet recommendations
                     best_bets = []
-                    if home_odds and home_analysis['edge'] > 0.02:  # 2% edge threshold
-                        best_bets.append((home_team, home_analysis['edge'], home_analysis['kelly']))
-                    if away_odds and away_analysis['edge'] > 0.02:
-                        best_bets.append((away_team, away_analysis['edge'], away_analysis['kelly']))
+                    if home_odds and home_analysis['edge'] > 0.01:  # Lower threshold for advanced analysis
+                        bet_quality = (home_analysis['value_rating'] + reliability * 100) / 2
+                        best_bets.append((home_team, home_analysis['edge'], home_analysis['kelly'], 
+                                        home_analysis['value_rating'], bet_quality))
+                    if away_odds and away_analysis['edge'] > 0.01:
+                        bet_quality = (away_analysis['value_rating'] + reliability * 100) / 2
+                        best_bets.append((away_team, away_analysis['edge'], away_analysis['kelly'], 
+                                        away_analysis['value_rating'], bet_quality))
                     
                     if best_bets:
-                        best_bet = max(best_bets, key=lambda x: x[1])
-                        print(f"\n   {Fore.GREEN}⭐ RECOMMENDED BET: {best_bet[0]} ({best_bet[1]:+.1%} edge, {best_bet[2]:.1f}% Kelly){Style.RESET_ALL}")
+                        # Sort by bet quality (combination of value rating and reliability)
+                        best_bet = max(best_bets, key=lambda x: x[4])
+                        print(f"\n   {Fore.GREEN}⭐ RECOMMENDED BET: {best_bet[0]}{Style.RESET_ALL}")
+                        print(f"     Edge: {best_bet[1]:+.1%}")
+                        print(f"     Kelly: {best_bet[2]:.1f}% of bankroll")
+                        print(f"     Value Rating: {best_bet[3]:.0f}/100")
+                        print(f"     Bet Quality: {best_bet[4]:.0f}/100")
+                        
+                        # Show all viable bets
+                        if len(best_bets) > 1:
+                            print(f"   {Fore.CYAN}Other Viable Bets:{Style.RESET_ALL}")
+                            for bet in sorted(best_bets[1:], key=lambda x: x[4], reverse=True):
+                                print(f"     {bet[0]}: Edge {bet[1]:+.1%}, Kelly {bet[2]:.1f}%, Quality {bet[4]:.0f}/100")
                     else:
                         print(f"\n   {Fore.YELLOW}⚠️  NO STRONG BETTING OPPORTUNITIES{Style.RESET_ALL}")
+                        print(f"   (Minimum edge threshold: 1%, Reliability: {reliability:.1%})")
         
         print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
         deinit()

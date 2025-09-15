@@ -1,7 +1,7 @@
 """
-Comprehensive Backtesting Engine for NBA prediction models.
-Tests models on historical data (2023-2024 season) with detailed performance metrics,
-ROI analysis, and betting strategy evaluation.
+Advanced Comprehensive Backtesting Engine for NBA prediction models.
+Tests models on historical data with advanced performance metrics, uncertainty quantification,
+ROI analysis, betting strategy evaluation, and market efficiency analysis.
 """
 import pandas as pd
 import numpy as np
@@ -9,16 +9,27 @@ import sqlite3
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 import warnings
+from scipy import stats
+from sklearn.metrics import roc_auc_score, precision_recall_curve, roc_curve
+from sklearn.calibration import calibration_curve
+import json
 warnings.filterwarnings('ignore')
 
-class BacktestingEngine:
+class AdvancedBacktestingEngine:
     def __init__(self):
         self.results = {}
         self.betting_results = []
         self.performance_metrics = {}
         self.roi_tracking = []
+        self.uncertainty_metrics = {}
+        self.market_efficiency_metrics = {}
+        self.calibration_metrics = {}
+        self.advanced_metrics = {}
+        self.feature_importance = {}
+        self.model_comparison = {}
+        self.risk_metrics = {}
         
     def load_historical_data(self, start_date="2023-10-01", end_date="2024-06-30"):
         """Load historical game data for backtesting"""
@@ -132,12 +143,15 @@ class BacktestingEngine:
         
         return bet_history, current_bankroll
     
-    def run_model_backtest(self, model_predictor, historical_data, model_name="Unknown"):
-        """Run backtest for a specific model"""
-        print(f"Running backtest for {model_name}...")
+    def run_advanced_model_backtest(self, model_predictor, historical_data, model_name="Unknown"):
+        """Run advanced backtest for a specific model with comprehensive metrics"""
+        print(f"Running advanced backtest for {model_name}...")
         
         predictions = []
         actual_outcomes = []
+        probabilities = []
+        uncertainties = []
+        confidences = []
         
         # Get feature columns (this would need to be adapted based on your model)
         feature_cols = [col for col in historical_data.columns 
@@ -159,12 +173,25 @@ class BacktestingEngine:
                 predictions.append(prediction)
                 actual_outcomes.append(int(game_row['Home-Team-Win']))
                 
+                # Extract advanced metrics
+                if prediction and isinstance(prediction, dict):
+                    probabilities.append(prediction.get('probability', 0.5))
+                    uncertainties.append(prediction.get('uncertainty', 0.1))
+                    confidences.append(prediction.get('confidence', 0.5))
+                else:
+                    probabilities.append(0.5)
+                    uncertainties.append(0.1)
+                    confidences.append(0.5)
+                
             except Exception as e:
                 print(f"Error predicting game {idx}: {e}")
                 predictions.append(None)
                 actual_outcomes.append(int(game_row['Home-Team-Win']))
+                probabilities.append(0.5)
+                uncertainties.append(0.1)
+                confidences.append(0.5)
         
-        # Calculate accuracy metrics
+        # Calculate advanced metrics
         valid_predictions = [(p, a) for p, a in zip(predictions, actual_outcomes) if p is not None]
         
         if not valid_predictions:
@@ -173,21 +200,21 @@ class BacktestingEngine:
         
         pred_outcomes = [p.get('prediction', 0) for p, a in valid_predictions]
         actual_valid = [a for p, a in valid_predictions]
+        prob_valid = probabilities[:len(valid_predictions)]
+        unc_valid = uncertainties[:len(valid_predictions)]
         
-        accuracy = sum(1 for p, a in zip(pred_outcomes, actual_valid) if p == a) / len(valid_predictions)
+        # Calculate comprehensive metrics
+        advanced_metrics = self.calculate_advanced_metrics(
+            pred_outcomes, actual_valid, prob_valid, unc_valid
+        )
         
-        # Calculate probability metrics
-        probabilities = [p.get('probability', 0.5) for p, a in valid_predictions]
-        log_loss = self.calculate_log_loss(probabilities, actual_valid)
-        brier_score = self.calculate_brier_score(probabilities, actual_valid)
-        
-        # Betting simulations
-        betting_strategies = ['kelly', 'fixed_percentage', 'fixed_amount']
+        # Enhanced betting simulations with uncertainty
+        betting_strategies = ['kelly', 'fixed_percentage', 'fixed_amount', 'uncertainty_adjusted']
         betting_results = {}
         
         for strategy in betting_strategies:
-            bet_history, final_bankroll = self.simulate_betting_strategy(
-                predictions, actual_outcomes, strategy=strategy
+            bet_history, final_bankroll = self.simulate_advanced_betting_strategy(
+                predictions, actual_outcomes, strategy=strategy, uncertainties=uncertainties
             )
             
             if bet_history:
@@ -195,27 +222,213 @@ class BacktestingEngine:
                 win_rate = sum(1 for bet in bet_history if bet['result'] == 'WIN') / len(bet_history)
                 avg_bet = np.mean([bet['bet_amount'] for bet in bet_history])
                 
+                # Calculate additional betting metrics
+                profit_factor = self._calculate_profit_factor(bet_history)
+                max_consecutive_wins = self._calculate_max_consecutive_wins(bet_history)
+                max_consecutive_losses = self._calculate_max_consecutive_losses(bet_history)
+                
                 betting_results[strategy] = {
                     'final_bankroll': final_bankroll,
                     'roi': roi,
                     'total_bets': len(bet_history),
                     'win_rate': win_rate,
                     'avg_bet_size': avg_bet,
+                    'profit_factor': profit_factor,
+                    'max_consecutive_wins': max_consecutive_wins,
+                    'max_consecutive_losses': max_consecutive_losses,
                     'bet_history': bet_history
                 }
+        
+        # Feature importance analysis (if available)
+        feature_importance = self._analyze_feature_importance(model_predictor, historical_data, feature_cols)
         
         results = {
             'model_name': model_name,
             'total_games': len(historical_data),
             'valid_predictions': len(valid_predictions),
-            'accuracy': accuracy,
-            'log_loss': log_loss,
-            'brier_score': brier_score,
-            'betting_results': betting_results
+            'advanced_metrics': advanced_metrics,
+            'betting_results': betting_results,
+            'feature_importance': feature_importance,
+            'uncertainty_analysis': self._analyze_uncertainty(uncertainties, pred_outcomes, actual_valid),
+            'calibration_analysis': self._analyze_calibration(probabilities, actual_valid)
         }
         
         self.results[model_name] = results
+        self.advanced_metrics[model_name] = advanced_metrics
         return results
+    
+    def simulate_advanced_betting_strategy(self, predictions, actual_outcomes, strategy="kelly", 
+                                         uncertainties=None, bankroll=10000):
+        """Simulate advanced betting strategy with uncertainty consideration"""
+        current_bankroll = bankroll
+        bet_history = []
+        
+        for i, (pred, actual) in enumerate(zip(predictions, actual_outcomes)):
+            if pred is None:
+                continue
+                
+            probability = pred.get('probability', 0.5)
+            confidence = pred.get('confidence', 0)
+            uncertainty = uncertainties[i] if uncertainties and i < len(uncertainties) else 0.1
+            
+            # Betting decision based on strategy
+            should_bet = False
+            bet_amount = 0
+            
+            if strategy == "kelly":
+                # Kelly Criterion with confidence threshold
+                if confidence > 0.6:
+                    implied_odds = 1.91
+                    edge = probability - (1/implied_odds)
+                    
+                    if edge > 0:
+                        kelly_fraction = edge / (implied_odds - 1)
+                        # Adjust for uncertainty
+                        uncertainty_adjustment = 1 - uncertainty
+                        bet_amount = current_bankroll * min(kelly_fraction * uncertainty_adjustment, 0.25)
+                        should_bet = True
+            
+            elif strategy == "uncertainty_adjusted":
+                # Only bet on low uncertainty predictions
+                if uncertainty < 0.3 and confidence > 0.7:
+                    implied_odds = 1.91
+                    edge = probability - (1/implied_odds)
+                    
+                    if edge > 0:
+                        bet_amount = current_bankroll * 0.02  # 2% of bankroll
+                        should_bet = True
+            
+            elif strategy == "fixed_percentage":
+                if confidence > 0.65 and uncertainty < 0.4:
+                    bet_amount = current_bankroll * 0.02
+                    should_bet = True
+            
+            elif strategy == "fixed_amount":
+                if confidence > 0.6 and uncertainty < 0.5:
+                    bet_amount = min(100, current_bankroll * 0.05)
+                    should_bet = True
+            
+            if should_bet and bet_amount > 0 and current_bankroll > bet_amount:
+                predicted_outcome = pred.get('prediction', 0)
+                
+                if predicted_outcome == actual:
+                    profit = bet_amount * 0.91
+                    current_bankroll += profit
+                    result = 'WIN'
+                else:
+                    current_bankroll -= bet_amount
+                    profit = -bet_amount
+                    result = 'LOSS'
+                
+                bet_history.append({
+                    'game_index': i,
+                    'bet_amount': bet_amount,
+                    'probability': probability,
+                    'confidence': confidence,
+                    'uncertainty': uncertainty,
+                    'predicted': predicted_outcome,
+                    'actual': actual,
+                    'result': result,
+                    'profit': profit,
+                    'bankroll': current_bankroll
+                })
+        
+        return bet_history, current_bankroll
+    
+    def _calculate_profit_factor(self, bet_history):
+        """Calculate profit factor (gross profit / gross loss)"""
+        gross_profit = sum(bet['profit'] for bet in bet_history if bet['profit'] > 0)
+        gross_loss = abs(sum(bet['profit'] for bet in bet_history if bet['profit'] < 0))
+        
+        return gross_profit / gross_loss if gross_loss > 0 else float('inf')
+    
+    def _calculate_max_consecutive_wins(self, bet_history):
+        """Calculate maximum consecutive wins"""
+        max_wins = 0
+        current_wins = 0
+        
+        for bet in bet_history:
+            if bet['result'] == 'WIN':
+                current_wins += 1
+                max_wins = max(max_wins, current_wins)
+            else:
+                current_wins = 0
+        
+        return max_wins
+    
+    def _calculate_max_consecutive_losses(self, bet_history):
+        """Calculate maximum consecutive losses"""
+        max_losses = 0
+        current_losses = 0
+        
+        for bet in bet_history:
+            if bet['result'] == 'LOSS':
+                current_losses += 1
+                max_losses = max(max_losses, current_losses)
+            else:
+                current_losses = 0
+        
+        return max_losses
+    
+    def _analyze_feature_importance(self, model_predictor, historical_data, feature_cols):
+        """Analyze feature importance if available"""
+        try:
+            if hasattr(model_predictor, 'get_feature_importance'):
+                return model_predictor.get_feature_importance()
+            elif hasattr(model_predictor, 'feature_importances_'):
+                return dict(zip(feature_cols, model_predictor.feature_importances_))
+            else:
+                return {}
+        except:
+            return {}
+    
+    def _analyze_uncertainty(self, uncertainties, predictions, actual_outcomes):
+        """Analyze uncertainty patterns"""
+        if not uncertainties:
+            return {}
+        
+        # Group by uncertainty levels
+        low_unc = [i for i, u in enumerate(uncertainties) if u < 0.3]
+        med_unc = [i for i, u in enumerate(uncertainties) if 0.3 <= u < 0.7]
+        high_unc = [i for i, u in enumerate(uncertainties) if u >= 0.7]
+        
+        analysis = {}
+        for level, indices in [('low', low_unc), ('medium', med_unc), ('high', high_unc)]:
+            if indices:
+                level_predictions = [predictions[i] for i in indices if i < len(predictions)]
+                level_actual = [actual_outcomes[i] for i in indices if i < len(actual_outcomes)]
+                
+                if level_predictions and level_actual:
+                    accuracy = sum(1 for p, a in zip(level_predictions, level_actual) if p == a) / len(level_predictions)
+                    analysis[f'{level}_uncertainty_accuracy'] = accuracy
+                    analysis[f'{level}_uncertainty_count'] = len(level_predictions)
+        
+        return analysis
+    
+    def _analyze_calibration(self, probabilities, actual_outcomes):
+        """Analyze probability calibration"""
+        try:
+            # Bin probabilities and calculate actual frequencies
+            bins = np.linspace(0, 1, 11)
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            
+            calibration_data = []
+            for i in range(len(bins) - 1):
+                mask = (probabilities >= bins[i]) & (probabilities < bins[i+1])
+                if np.any(mask):
+                    bin_actual = np.array(actual_outcomes)[mask]
+                    actual_freq = np.mean(bin_actual)
+                    predicted_freq = np.mean(np.array(probabilities)[mask])
+                    calibration_data.append({
+                        'bin_center': bin_centers[i],
+                        'predicted_freq': predicted_freq,
+                        'actual_freq': actual_freq,
+                        'count': len(bin_actual)
+                    })
+            
+            return calibration_data
+        except:
+            return []
     
     def calculate_log_loss(self, probabilities, actual_outcomes):
         """Calculate log loss"""
@@ -236,9 +449,148 @@ class BacktestingEngine:
         brier_sum = sum((prob - actual) ** 2 for prob, actual in zip(probabilities, actual_outcomes))
         return brier_sum / len(probabilities)
     
-    def run_comprehensive_backtest(self):
-        """Run comprehensive backtest on all available models"""
-        print("Starting comprehensive backtest...")
+    def calculate_advanced_metrics(self, predictions, actual_outcomes, probabilities, uncertainties=None):
+        """Calculate advanced performance metrics"""
+        metrics = {}
+        
+        # Basic metrics
+        metrics['accuracy'] = sum(1 for p, a in zip(predictions, actual_outcomes) if p == a) / len(predictions)
+        metrics['log_loss'] = self.calculate_log_loss(probabilities, actual_outcomes)
+        metrics['brier_score'] = self.calculate_brier_score(probabilities, actual_outcomes)
+        
+        # ROC AUC
+        try:
+            metrics['roc_auc'] = roc_auc_score(actual_outcomes, probabilities)
+        except:
+            metrics['roc_auc'] = 0.5
+        
+        # Precision-Recall metrics
+        try:
+            precision, recall, thresholds = precision_recall_curve(actual_outcomes, probabilities)
+            metrics['pr_auc'] = np.trapz(precision, recall)
+        except:
+            metrics['pr_auc'] = 0.5
+        
+        # Calibration metrics
+        try:
+            fraction_of_positives, mean_predicted_value = calibration_curve(
+                actual_outcomes, probabilities, n_bins=10
+            )
+            metrics['calibration_error'] = np.mean(np.abs(fraction_of_positives - mean_predicted_value))
+        except:
+            metrics['calibration_error'] = 0.0
+        
+        # Confidence-based metrics
+        if uncertainties is not None:
+            metrics['uncertainty_correlation'] = np.corrcoef(uncertainties, [abs(p - a) for p, a in zip(probabilities, actual_outcomes)])[0, 1]
+            metrics['high_confidence_accuracy'] = self._calculate_high_confidence_accuracy(
+                predictions, actual_outcomes, uncertainties, threshold=0.7
+            )
+            metrics['uncertainty_reliability'] = self._calculate_uncertainty_reliability(
+                uncertainties, [abs(p - a) for p, a in zip(probabilities, actual_outcomes)]
+            )
+        
+        # Market efficiency metrics
+        metrics['market_efficiency'] = self._calculate_market_efficiency(probabilities, actual_outcomes)
+        metrics['value_betting_opportunities'] = self._count_value_betting_opportunities(probabilities, actual_outcomes)
+        
+        # Risk metrics
+        metrics['max_drawdown'] = self._calculate_max_drawdown(probabilities, actual_outcomes)
+        metrics['sharpe_ratio'] = self._calculate_sharpe_ratio(probabilities, actual_outcomes)
+        metrics['var_95'] = self._calculate_var(probabilities, actual_outcomes, confidence=0.95)
+        
+        return metrics
+    
+    def _calculate_high_confidence_accuracy(self, predictions, actual_outcomes, uncertainties, threshold=0.7):
+        """Calculate accuracy for high-confidence predictions"""
+        high_conf_mask = uncertainties < (1 - threshold)
+        if not np.any(high_conf_mask):
+            return 0.0
+        
+        high_conf_predictions = np.array(predictions)[high_conf_mask]
+        high_conf_actual = np.array(actual_outcomes)[high_conf_mask]
+        
+        return sum(1 for p, a in zip(high_conf_predictions, high_conf_actual) if p == a) / len(high_conf_predictions)
+    
+    def _calculate_uncertainty_reliability(self, uncertainties, errors):
+        """Calculate how well uncertainty estimates correlate with actual errors"""
+        if len(uncertainties) < 2:
+            return 0.0
+        
+        correlation = np.corrcoef(uncertainties, errors)[0, 1]
+        return correlation if not np.isnan(correlation) else 0.0
+    
+    def _calculate_market_efficiency(self, probabilities, actual_outcomes):
+        """Calculate market efficiency score"""
+        # Simulate market odds (would use real odds in practice)
+        market_odds = [1.91 if p > 0.5 else 1.91 for p in probabilities]  # -110 odds
+        market_probs = [1/odds for odds in market_odds]
+        
+        # Calculate how much our model beats the market
+        our_accuracy = sum(1 for p, a in zip(probabilities, actual_outcomes) if (p > 0.5) == a) / len(probabilities)
+        market_accuracy = sum(1 for p, a in zip(market_probs, actual_outcomes) if (p > 0.5) == a) / len(market_probs)
+        
+        return our_accuracy - market_accuracy
+    
+    def _count_value_betting_opportunities(self, probabilities, actual_outcomes, min_edge=0.05):
+        """Count value betting opportunities"""
+        # Simulate market odds
+        market_odds = [1.91 if p > 0.5 else 1.91 for p in probabilities]
+        market_probs = [1/odds for odds in market_odds]
+        
+        value_opportunities = 0
+        for our_prob, market_prob in zip(probabilities, market_probs):
+            edge = our_prob - market_prob
+            if edge > min_edge:
+                value_opportunities += 1
+        
+        return value_opportunities
+    
+    def _calculate_max_drawdown(self, probabilities, actual_outcomes):
+        """Calculate maximum drawdown in accuracy"""
+        accuracies = []
+        for i in range(1, len(probabilities) + 1):
+            window_preds = probabilities[:i]
+            window_actual = actual_outcomes[:i]
+            window_acc = sum(1 for p, a in zip(window_preds, window_actual) if (p > 0.5) == a) / len(window_preds)
+            accuracies.append(window_acc)
+        
+        peak = accuracies[0]
+        max_dd = 0
+        for acc in accuracies:
+            if acc > peak:
+                peak = acc
+            dd = peak - acc
+            if dd > max_dd:
+                max_dd = dd
+        
+        return max_dd
+    
+    def _calculate_sharpe_ratio(self, probabilities, actual_outcomes):
+        """Calculate Sharpe ratio for prediction performance"""
+        # Convert to returns (1 for correct, -1 for incorrect)
+        returns = [1 if (p > 0.5) == a else -1 for p, a in zip(probabilities, actual_outcomes)]
+        
+        if len(returns) < 2:
+            return 0.0
+        
+        mean_return = np.mean(returns)
+        std_return = np.std(returns)
+        
+        return mean_return / std_return if std_return > 0 else 0.0
+    
+    def _calculate_var(self, probabilities, actual_outcomes, confidence=0.95):
+        """Calculate Value at Risk"""
+        returns = [1 if (p > 0.5) == a else -1 for p, a in zip(probabilities, actual_outcomes)]
+        
+        if len(returns) < 2:
+            return 0.0
+        
+        return np.percentile(returns, (1 - confidence) * 100)
+    
+    def run_advanced_comprehensive_backtest(self):
+        """Run advanced comprehensive backtest on all available models"""
+        print("Starting advanced comprehensive backtest...")
         
         # Load historical data
         historical_data = self.load_historical_data()
@@ -257,7 +609,7 @@ class BacktestingEngine:
             print("No trained models found for backtesting")
             return
         
-        # Test each available model
+        # Test each available model with advanced metrics
         for model_name, model_info in available_models.items():
             try:
                 if model_name == 'boosted_system':
@@ -268,39 +620,60 @@ class BacktestingEngine:
                     continue  # Skip for now
                 
                 if model_predictor is not None:
-                    self.run_model_backtest(model_predictor, historical_data, model_name)
+                    self.run_advanced_model_backtest(model_predictor, historical_data, model_name)
                     
             except Exception as e:
                 print(f"Error testing {model_name}: {e}")
         
-        # Generate summary report
-        self.generate_backtest_report()
+        # Generate advanced summary report
+        self.generate_advanced_backtest_report()
     
-    def generate_backtest_report(self):
-        """Generate comprehensive backtest report"""
+    def run_comprehensive_backtest(self):
+        """Backward compatibility wrapper for comprehensive backtest"""
+        return self.run_advanced_comprehensive_backtest()
+    
+    def generate_advanced_backtest_report(self):
+        """Generate advanced comprehensive backtest report"""
         if not self.results:
             print("No backtest results to report")
             return
         
-        print("\n" + "="*80)
-        print("COMPREHENSIVE BACKTEST REPORT")
-        print("="*80)
+        print("\n" + "="*100)
+        print("ADVANCED COMPREHENSIVE BACKTEST REPORT")
+        print("="*100)
         
-        # Model comparison table
-        print("\nMODEL PERFORMANCE COMPARISON:")
-        print("-" * 80)
-        print(f"{'Model':<20} {'Accuracy':<10} {'Log Loss':<10} {'Brier':<10} {'Best ROI':<10}")
+        # Advanced model comparison table
+        print("\nADVANCED MODEL PERFORMANCE COMPARISON:")
+        print("-" * 120)
+        print(f"{'Model':<20} {'Accuracy':<10} {'ROC AUC':<10} {'Log Loss':<10} {'Brier':<10} {'Calib Error':<12} {'Best ROI':<10} {'Sharpe':<8}")
+        print("-" * 120)
+        
+        for model_name, results in self.results.items():
+            metrics = results.get('advanced_metrics', {})
+            best_roi = max([br['roi'] for br in results['betting_results'].values()]) if results['betting_results'] else 0
+            
+            print(f"{model_name:<20} {metrics.get('accuracy', 0):<10.3f} {metrics.get('roc_auc', 0):<10.3f} "
+                  f"{metrics.get('log_loss', 0):<10.3f} {metrics.get('brier_score', 0):<10.3f} "
+                  f"{metrics.get('calibration_error', 0):<12.3f} {best_roi:<10.1f}% {metrics.get('sharpe_ratio', 0):<8.3f}")
+        
+        # Uncertainty analysis
+        print("\nUNCERTAINTY ANALYSIS:")
         print("-" * 80)
         
         for model_name, results in self.results.items():
-            best_roi = max([br['roi'] for br in results['betting_results'].values()]) if results['betting_results'] else 0
-            
-            print(f"{model_name:<20} {results['accuracy']:<10.3f} {results['log_loss']:<10.3f} "
-                  f"{results['brier_score']:<10.3f} {best_roi:<10.1f}%")
+            uncertainty_analysis = results.get('uncertainty_analysis', {})
+            if uncertainty_analysis:
+                print(f"\n{model_name.upper()}:")
+                for level in ['low', 'medium', 'high']:
+                    acc_key = f'{level}_uncertainty_accuracy'
+                    count_key = f'{level}_uncertainty_count'
+                    if acc_key in uncertainty_analysis:
+                        print(f"  {level.title()} Uncertainty: {uncertainty_analysis[acc_key]:.3f} accuracy "
+                              f"({uncertainty_analysis[count_key]} predictions)")
         
-        # Detailed betting strategy results
-        print("\nBETTING STRATEGY RESULTS:")
-        print("-" * 80)
+        # Enhanced betting strategy results
+        print("\nENHANCED BETTING STRATEGY RESULTS:")
+        print("-" * 100)
         
         for model_name, results in self.results.items():
             print(f"\n{model_name.upper()}:")
@@ -311,10 +684,36 @@ class BacktestingEngine:
                 print(f"    Win Rate: {bet_results['win_rate']:.1%}")
                 print(f"    Total Bets: {bet_results['total_bets']}")
                 print(f"    Avg Bet Size: ${bet_results['avg_bet_size']:.2f}")
+                print(f"    Profit Factor: {bet_results.get('profit_factor', 0):.2f}")
+                print(f"    Max Consecutive Wins: {bet_results.get('max_consecutive_wins', 0)}")
+                print(f"    Max Consecutive Losses: {bet_results.get('max_consecutive_losses', 0)}")
         
-        # Best overall model
-        best_model = max(self.results.items(), key=lambda x: x[1]['accuracy'])
-        print(f"\nBEST OVERALL MODEL: {best_model[0]} (Accuracy: {best_model[1]['accuracy']:.3f})")
+        # Market efficiency analysis
+        print("\nMARKET EFFICIENCY ANALYSIS:")
+        print("-" * 80)
+        
+        for model_name, results in self.results.items():
+            metrics = results.get('advanced_metrics', {})
+            market_efficiency = metrics.get('market_efficiency', 0)
+            value_opportunities = metrics.get('value_betting_opportunities', 0)
+            
+            print(f"{model_name}: {market_efficiency:+.3f} efficiency, {value_opportunities} value opportunities")
+        
+        # Risk analysis
+        print("\nRISK ANALYSIS:")
+        print("-" * 80)
+        
+        for model_name, results in self.results.items():
+            metrics = results.get('advanced_metrics', {})
+            max_drawdown = metrics.get('max_drawdown', 0)
+            sharpe_ratio = metrics.get('sharpe_ratio', 0)
+            var_95 = metrics.get('var_95', 0)
+            
+            print(f"{model_name}: Max Drawdown: {max_drawdown:.3f}, Sharpe: {sharpe_ratio:.3f}, VaR 95%: {var_95:.3f}")
+        
+        # Best overall model (comprehensive ranking)
+        best_model = self._rank_models_comprehensively()
+        print(f"\nBEST OVERALL MODEL: {best_model[0]} (Comprehensive Score: {best_model[1]:.3f})")
         
         # Best ROI model
         best_roi_model = None
@@ -328,6 +727,44 @@ class BacktestingEngine:
         
         if best_roi_model:
             print(f"BEST ROI STRATEGY: {best_roi_model[0]} with {best_roi_model[1]} ({best_roi_value:+.1f}%)")
+    
+    def _rank_models_comprehensively(self):
+        """Rank models using a comprehensive scoring system"""
+        model_scores = {}
+        
+        for model_name, results in self.results.items():
+            metrics = results.get('advanced_metrics', {})
+            betting_results = results.get('betting_results', {})
+            
+            # Weighted scoring system
+            score = 0
+            
+            # Performance metrics (40% weight)
+            score += metrics.get('accuracy', 0) * 0.2
+            score += metrics.get('roc_auc', 0) * 0.1
+            score += (1 - metrics.get('log_loss', 1)) * 0.05
+            score += (1 - metrics.get('brier_score', 1)) * 0.05
+            
+            # Risk metrics (20% weight)
+            score += (1 - metrics.get('max_drawdown', 1)) * 0.1
+            score += max(0, metrics.get('sharpe_ratio', 0)) * 0.1
+            
+            # Market efficiency (20% weight)
+            score += max(0, metrics.get('market_efficiency', 0)) * 0.1
+            score += min(1, metrics.get('value_betting_opportunities', 0) / 100) * 0.1
+            
+            # Betting performance (20% weight)
+            if betting_results:
+                best_roi = max([br['roi'] for br in betting_results.values()])
+                score += max(0, best_roi / 100) * 0.2
+            
+            model_scores[model_name] = score
+        
+        return max(model_scores.items(), key=lambda x: x[1])
+    
+    def generate_backtest_report(self):
+        """Backward compatibility wrapper for backtest report"""
+        return self.generate_advanced_backtest_report()
     
     def plot_performance_charts(self):
         """Generate performance visualization charts"""
@@ -430,12 +867,17 @@ class BacktestingEngine:
         except Exception as e:
             print(f"Error saving results: {e}")
 
-def run_full_backtest():
-    """Run complete backtesting pipeline"""
-    engine = BacktestingEngine()
+# Backward compatibility class
+class BacktestingEngine(AdvancedBacktestingEngine):
+    """Backward compatibility wrapper for AdvancedBacktestingEngine"""
+    pass
+
+def run_advanced_full_backtest():
+    """Run complete advanced backtesting pipeline"""
+    engine = AdvancedBacktestingEngine()
     
-    # Run comprehensive backtest
-    engine.run_comprehensive_backtest()
+    # Run advanced comprehensive backtest
+    engine.run_advanced_comprehensive_backtest()
     
     # Generate visualizations
     engine.plot_performance_charts()
@@ -445,10 +887,14 @@ def run_full_backtest():
     
     return engine
 
+def run_full_backtest():
+    """Backward compatibility wrapper for full backtest"""
+    return run_advanced_full_backtest()
+
 if __name__ == "__main__":
-    print("Starting NBA Model Backtesting...")
+    print("Starting Advanced NBA Model Backtesting...")
     
-    # Run full backtest
-    backtest_engine = run_full_backtest()
+    # Run advanced full backtest
+    backtest_engine = run_advanced_full_backtest()
     
-    print("\nBacktesting complete! Check backtest_results.png and backtest_detailed_results.csv for detailed analysis.")
+    print("\nAdvanced backtesting complete! Check backtest_results.png and backtest_detailed_results.csv for detailed analysis.")

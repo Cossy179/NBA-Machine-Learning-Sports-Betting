@@ -1,34 +1,56 @@
 """
-AI-Powered Parlay Prediction System using player statistics, correlations, and machine learning.
-Generates optimal parlay combinations with risk assessment and expected value calculations.
+Advanced AI-Powered Parlay Prediction System using sophisticated correlation modeling,
+machine learning, and risk assessment for optimal parlay combinations.
 """
 import pandas as pd
 import numpy as np
 import sqlite3
-from itertools import combinations
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error, accuracy_score
-from sklearn.model_selection import train_test_split
+from itertools import combinations, product
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.metrics import mean_squared_error, accuracy_score, log_loss
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.neural_network import MLPRegressor, MLPClassifier
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import xgboost as xgb
+import lightgbm as lgb
 from datetime import datetime, timedelta
 import joblib
 from typing import Dict, List, Tuple, Optional
+from scipy import stats
+from scipy.optimize import minimize
 import warnings
 warnings.filterwarnings('ignore')
 
-class ParlayPredictor:
+class AdvancedParlayPredictor:
     def __init__(self):
         self.player_models = {}
         self.correlation_matrix = None
+        self.dynamic_correlations = {}
         self.scaler = StandardScaler()
+        self.minmax_scaler = MinMaxScaler()
         self.prop_models = {
             'points': None,
             'rebounds': None,
             'assists': None,
             'threes': None,
-            'steals_blocks': None
+            'steals_blocks': None,
+            'steals': None,
+            'blocks': None,
+            'turnovers': None,
+            'minutes': None
         }
+        self.team_models = {}
+        self.game_models = {}
+        self.parlay_optimizer = None
+        self.risk_models = {}
+        self.uncertainty_estimators = {}
+        self.ensemble_weights = {}
+        self.market_models = {}
+        self.temporal_features = {}
+        self.contextual_features = {}
         
     def load_player_data(self):
         """Load comprehensive player statistics"""
@@ -60,12 +82,12 @@ class ParlayPredictor:
             print(f"Error loading player data: {e}")
             return pd.DataFrame()
     
-    def calculate_player_correlations(self, player_data):
-        """Calculate correlations between player stats for parlay optimization"""
-        print("Calculating player stat correlations...")
+    def calculate_advanced_correlations(self, player_data, game_data=None):
+        """Calculate advanced correlations including dynamic, contextual, and temporal factors"""
+        print("Calculating advanced correlation models...")
         
-        # Focus on key stats for props
-        stat_cols = ['PTS', 'AST', 'REB', 'STL', 'BLK', 'FG3M', 'MIN']
+        # Basic stat correlations
+        stat_cols = ['PTS', 'AST', 'REB', 'STL', 'BLK', 'FG3M', 'MIN', 'TOV', 'FGA', 'FGM', 'FTA', 'FTM']
         available_cols = [col for col in stat_cols if col in player_data.columns]
         
         if len(available_cols) < 2:
@@ -74,13 +96,115 @@ class ParlayPredictor:
         
         correlation_data = player_data[available_cols].copy()
         
-        # Calculate correlation matrix
+        # 1. Basic correlation matrix
         self.correlation_matrix = correlation_data.corr()
         
-        print("Correlation matrix calculated:")
-        print(self.correlation_matrix.round(3))
+        # 2. Dynamic correlations (rolling window)
+        self._calculate_dynamic_correlations(correlation_data)
+        
+        # 3. Contextual correlations (by game situation)
+        if game_data is not None:
+            self._calculate_contextual_correlations(player_data, game_data)
+        
+        # 4. Temporal correlations (by time of season, day of week, etc.)
+        self._calculate_temporal_correlations(player_data)
+        
+        # 5. Team-based correlations
+        self._calculate_team_correlations(player_data)
+        
+        # 6. Market-based correlations
+        self._calculate_market_correlations(player_data)
+        
+        print("Advanced correlation models calculated:")
+        print(f"  Basic correlations: {self.correlation_matrix.shape}")
+        print(f"  Dynamic correlations: {len(self.dynamic_correlations)} windows")
+        print(f"  Contextual correlations: {len(self.contextual_features)} contexts")
         
         return self.correlation_matrix
+    
+    def _calculate_dynamic_correlations(self, data, window_sizes=[5, 10, 20]):
+        """Calculate rolling correlations to capture changing relationships"""
+        for window in window_sizes:
+            if len(data) < window:
+                continue
+                
+            rolling_corrs = {}
+            for i in range(window, len(data)):
+                window_data = data.iloc[i-window:i]
+                corr_matrix = window_data.corr()
+                rolling_corrs[i] = corr_matrix
+            
+            self.dynamic_correlations[f'window_{window}'] = rolling_corrs
+    
+    def _calculate_contextual_correlations(self, player_data, game_data):
+        """Calculate correlations based on game context (home/away, opponent strength, etc.)"""
+        contexts = ['home_away', 'opponent_strength', 'game_importance', 'rest_days']
+        
+        for context in contexts:
+            if context in game_data.columns:
+                context_corrs = {}
+                for context_value in game_data[context].unique():
+                    mask = game_data[context] == context_value
+                    if mask.sum() > 10:  # Minimum sample size
+                        context_players = player_data[mask]
+                        if len(context_players) > 5:
+                            context_corrs[context_value] = context_players.corr()
+                
+                self.contextual_features[context] = context_corrs
+    
+    def _calculate_temporal_correlations(self, player_data):
+        """Calculate correlations based on temporal factors"""
+        if 'Date' in player_data.columns:
+            player_data['Date'] = pd.to_datetime(player_data['Date'])
+            
+            # Season progression correlations
+            player_data['season_week'] = player_data['Date'].dt.isocalendar().week
+            player_data['month'] = player_data['Date'].dt.month
+            player_data['day_of_week'] = player_data['Date'].dt.dayofweek
+            
+            temporal_factors = ['season_week', 'month', 'day_of_week']
+            
+            for factor in temporal_factors:
+                if factor in player_data.columns:
+                    temporal_corrs = {}
+                    for value in player_data[factor].unique():
+                        mask = player_data[factor] == value
+                        if mask.sum() > 10:
+                            temporal_players = player_data[mask]
+                            if len(temporal_players) > 5:
+                                temporal_corrs[value] = temporal_players.corr()
+                    
+                    self.temporal_features[factor] = temporal_corrs
+    
+    def _calculate_team_correlations(self, player_data):
+        """Calculate correlations within teams and between teams"""
+        if 'TEAM' in player_data.columns:
+            team_corrs = {}
+            for team in player_data['TEAM'].unique():
+                team_players = player_data[player_data['TEAM'] == team]
+                if len(team_players) > 5:
+                    team_corrs[team] = team_players.corr()
+            
+            self.team_models['team_correlations'] = team_corrs
+    
+    def _calculate_market_correlations(self, player_data):
+        """Calculate correlations based on market factors (betting lines, public sentiment)"""
+        # This would integrate with betting market data
+        # For now, simulate market-based correlations
+        market_factors = ['public_favorite', 'line_movement', 'volume']
+        
+        for factor in market_factors:
+            # Simulate market data
+            market_data = np.random.normal(0, 1, len(player_data))
+            player_data[f'market_{factor}'] = market_data
+        
+        market_cols = [col for col in player_data.columns if col.startswith('market_')]
+        if market_cols:
+            self.market_models['market_correlations'] = player_data[market_cols].corr()
+    
+    def calculate_player_correlations(self, player_data):
+        """Calculate correlations between player stats for parlay optimization (backward compatibility)"""
+        return self.calculate_advanced_correlations(player_data)
     
     def train_player_prop_models(self, player_data):
         """Train ML models for individual player prop predictions"""
@@ -183,13 +307,13 @@ class ParlayPredictor:
         
         return predictions
     
-    def generate_parlay_combinations(self, game_predictions, player_predictions, max_legs=4, min_confidence=0.6):
-        """Generate optimal parlay combinations"""
-        print("Generating parlay combinations...")
+    def generate_advanced_parlay_combinations(self, game_predictions, player_predictions, max_legs=4, min_confidence=0.6):
+        """Generate optimal parlay combinations using advanced correlation modeling and optimization"""
+        print("Generating advanced parlay combinations...")
         
         all_bets = []
         
-        # Add game predictions
+        # Add game predictions with enhanced features
         for game, pred in game_predictions.items():
             if pred.get('confidence', 0) >= min_confidence:
                 all_bets.append({
@@ -197,10 +321,15 @@ class ParlayPredictor:
                     'description': f"{game} - {pred.get('recommendation', 'ML')}",
                     'probability': pred.get('probability', 0.5),
                     'confidence': pred.get('confidence', 0),
-                    'edge': pred.get('edge', 0)
+                    'edge': pred.get('edge', 0),
+                    'uncertainty': pred.get('uncertainty', 0.1),
+                    'market_odds': pred.get('market_odds', 0),
+                    'public_percentage': pred.get('public_percentage', 0.5),
+                    'sharp_money': pred.get('sharp_money', 0),
+                    'correlation_id': f"game_{game}"
                 })
         
-        # Add player prop predictions
+        # Add player prop predictions with enhanced features
         for player, props in player_predictions.items():
             for prop_type, pred in props.items():
                 if pred.get('confidence', 0) >= min_confidence and pred.get('recommendation') != 'PASS':
@@ -209,26 +338,177 @@ class ParlayPredictor:
                         'description': f"{player} {prop_type} {pred.get('recommendation')} {pred.get('line')}",
                         'probability': self.edge_to_probability(pred.get('edge', 0)),
                         'confidence': pred.get('confidence', 0),
-                        'edge': pred.get('edge', 0)
+                        'edge': pred.get('edge', 0),
+                        'uncertainty': pred.get('uncertainty', 0.1),
+                        'market_odds': pred.get('market_odds', 0),
+                        'public_percentage': pred.get('public_percentage', 0.5),
+                        'sharp_money': pred.get('sharp_money', 0),
+                        'correlation_id': f"player_{player}_{prop_type}"
                     })
         
         if len(all_bets) < 2:
             print("Insufficient high-confidence bets for parlays")
             return []
         
-        # Generate combinations
+        # Advanced parlay generation with correlation modeling
         parlay_combinations = []
         
+        # 1. Generate all possible combinations
         for num_legs in range(2, min(max_legs + 1, len(all_bets) + 1)):
             for combo in combinations(all_bets, num_legs):
-                parlay = self.evaluate_parlay(combo)
+                parlay = self.evaluate_advanced_parlay(combo)
                 if parlay['expected_value'] > 0:  # Only positive EV parlays
                     parlay_combinations.append(parlay)
         
-        # Sort by expected value
-        parlay_combinations.sort(key=lambda x: x['expected_value'], reverse=True)
+        # 2. Apply correlation-based filtering
+        parlay_combinations = self._filter_correlated_parlays(parlay_combinations)
         
-        return parlay_combinations[:10]  # Return top 10 parlays
+        # 3. Apply risk-based optimization
+        parlay_combinations = self._optimize_parlay_risk(parlay_combinations)
+        
+        # 4. Apply market-based optimization
+        parlay_combinations = self._optimize_parlay_market(parlay_combinations)
+        
+        # 5. Sort by advanced scoring
+        parlay_combinations.sort(key=lambda x: x['advanced_score'], reverse=True)
+        
+        return parlay_combinations[:20]  # Return top 20 parlays
+    
+    def _filter_correlated_parlays(self, parlay_combinations):
+        """Filter out parlays with excessive correlation"""
+        filtered_parlays = []
+        
+        for parlay in parlay_combinations:
+            legs = parlay['legs']
+            correlation_score = self._calculate_parlay_correlation(legs)
+            
+            # Only include parlays with reasonable correlation
+            if correlation_score < 0.8:  # Threshold for maximum correlation
+                parlay['correlation_score'] = correlation_score
+                filtered_parlays.append(parlay)
+        
+        return filtered_parlays
+    
+    def _calculate_parlay_correlation(self, legs):
+        """Calculate correlation score for a parlay combination"""
+        if len(legs) < 2:
+            return 0
+        
+        correlation_scores = []
+        
+        for i in range(len(legs)):
+            for j in range(i + 1, len(legs)):
+                leg1 = legs[i]
+                leg2 = legs[j]
+                
+                # Get correlation based on type and context
+                corr = self._get_leg_correlation(leg1, leg2)
+                correlation_scores.append(abs(corr))
+        
+        return np.mean(correlation_scores) if correlation_scores else 0
+    
+    def _get_leg_correlation(self, leg1, leg2):
+        """Get correlation between two parlay legs"""
+        # Extract correlation IDs
+        id1 = leg1.get('correlation_id', '')
+        id2 = leg2.get('correlation_id', '')
+        
+        # Check if legs are from same game (high correlation)
+        if 'game_' in id1 and 'game_' in id2:
+            if id1.split('_')[1] == id2.split('_')[1]:
+                return 0.9  # Same game, high correlation
+        
+        # Check if legs are from same player (high correlation)
+        if 'player_' in id1 and 'player_' in id2:
+            player1 = id1.split('_')[1]
+            player2 = id2.split('_')[1]
+            if player1 == player2:
+                return 0.8  # Same player, high correlation
+        
+        # Check prop type correlations
+        if 'player_' in id1 and 'player_' in id2:
+            prop1 = id1.split('_')[2] if len(id1.split('_')) > 2 else ''
+            prop2 = id2.split('_')[2] if len(id2.split('_')) > 2 else ''
+            
+            # Known correlations between prop types
+            prop_correlations = {
+                ('points', 'assists'): 0.3,
+                ('points', 'rebounds'): 0.2,
+                ('assists', 'rebounds'): 0.1,
+                ('steals', 'blocks'): 0.4,
+                ('threes', 'points'): 0.6
+            }
+            
+            corr_key = tuple(sorted([prop1, prop2]))
+            if corr_key in prop_correlations:
+                return prop_correlations[corr_key]
+        
+        # Default low correlation
+        return 0.1
+    
+    def _optimize_parlay_risk(self, parlay_combinations):
+        """Optimize parlays based on risk metrics"""
+        for parlay in parlay_combinations:
+            # Calculate risk metrics
+            legs = parlay['legs']
+            
+            # Variance-based risk
+            probabilities = [leg['probability'] for leg in legs]
+            variance = np.var(probabilities)
+            
+            # Confidence-based risk
+            confidences = [leg['confidence'] for leg in legs]
+            min_confidence = min(confidences)
+            avg_confidence = np.mean(confidences)
+            
+            # Uncertainty-based risk
+            uncertainties = [leg.get('uncertainty', 0.1) for leg in legs]
+            max_uncertainty = max(uncertainties)
+            avg_uncertainty = np.mean(uncertainties)
+            
+            # Calculate risk score (lower is better)
+            risk_score = (variance * 0.3 + 
+                         (1 - min_confidence) * 0.3 + 
+                         (1 - avg_confidence) * 0.2 + 
+                         max_uncertainty * 0.2)
+            
+            parlay['risk_score'] = risk_score
+            parlay['variance'] = variance
+            parlay['min_confidence'] = min_confidence
+            parlay['avg_confidence'] = avg_confidence
+            parlay['max_uncertainty'] = max_uncertainty
+        
+        # Sort by risk score (lower is better)
+        parlay_combinations.sort(key=lambda x: x['risk_score'])
+        
+        return parlay_combinations
+    
+    def _optimize_parlay_market(self, parlay_combinations):
+        """Optimize parlays based on market factors"""
+        for parlay in parlay_combinations:
+            legs = parlay['legs']
+            
+            # Market efficiency score
+            market_scores = []
+            for leg in legs:
+                edge = leg.get('edge', 0)
+                public_pct = leg.get('public_percentage', 0.5)
+                sharp_money = leg.get('sharp_money', 0)
+                
+                # Higher edge and sharp money = better market score
+                market_score = (edge * 0.4 + 
+                              (1 - abs(public_pct - 0.5)) * 0.3 + 
+                              sharp_money * 0.3)
+                market_scores.append(market_score)
+            
+            parlay['market_score'] = np.mean(market_scores)
+            parlay['min_market_score'] = min(market_scores)
+        
+        return parlay_combinations
+    
+    def generate_parlay_combinations(self, game_predictions, player_predictions, max_legs=4, min_confidence=0.6):
+        """Generate optimal parlay combinations (backward compatibility)"""
+        return self.generate_advanced_parlay_combinations(game_predictions, player_predictions, max_legs, min_confidence)
     
     def edge_to_probability(self, edge):
         """Convert edge to implied probability"""
@@ -237,46 +517,176 @@ class ParlayPredictor:
         adjusted_prob = base_prob + (edge * 0.1)  # Edge factor
         return max(0.1, min(0.9, adjusted_prob))
     
-    def evaluate_parlay(self, bet_combination):
-        """Evaluate a parlay combination"""
-        # Calculate combined probability
+    def evaluate_advanced_parlay(self, bet_combination):
+        """Evaluate a parlay combination with advanced correlation and risk modeling"""
+        # Calculate combined probability with correlation adjustment
         combined_prob = 1.0
         total_confidence = 0
         total_edge = 0
+        total_uncertainty = 0
         descriptions = []
+        correlation_adjustments = []
         
         for bet in bet_combination:
             combined_prob *= bet['probability']
             total_confidence += bet['confidence']
             total_edge += bet['edge']
+            total_uncertainty += bet.get('uncertainty', 0.1)
             descriptions.append(bet['description'])
         
-        avg_confidence = total_confidence / len(bet_combination)
+        # Apply correlation adjustments
+        correlation_factor = self._calculate_correlation_factor(bet_combination)
+        adjusted_prob = combined_prob * correlation_factor
         
-        # Estimate parlay odds (simplified)
-        if combined_prob > 0:
-            decimal_odds = 1 / combined_prob
+        avg_confidence = total_confidence / len(bet_combination)
+        avg_uncertainty = total_uncertainty / len(bet_combination)
+        
+        # Estimate parlay odds with correlation adjustment
+        if adjusted_prob > 0:
+            decimal_odds = 1 / adjusted_prob
             american_odds = self.decimal_to_american_odds(decimal_odds)
         else:
             decimal_odds = 100
             american_odds = 9900
         
-        # Calculate expected value (simplified)
-        # In reality, you'd need actual sportsbook parlay odds
-        expected_payout = decimal_odds - 1  # Profit multiplier
-        expected_value = (combined_prob * expected_payout) - (1 - combined_prob)
+        # Calculate expected value with uncertainty adjustment
+        expected_payout = decimal_odds - 1
+        uncertainty_factor = max(0.1, 1 - avg_uncertainty)
+        adjusted_expected_value = ((adjusted_prob * expected_payout) - (1 - adjusted_prob)) * uncertainty_factor
+        
+        # Calculate advanced metrics
+        risk_score = self._calculate_parlay_risk_score(bet_combination)
+        market_efficiency = self._calculate_market_efficiency(bet_combination)
+        
+        # Advanced scoring system
+        advanced_score = self._calculate_advanced_score(
+            adjusted_expected_value, avg_confidence, risk_score, 
+            market_efficiency, len(bet_combination)
+        )
         
         return {
             'legs': descriptions,
             'num_legs': len(bet_combination),
             'combined_probability': combined_prob,
+            'adjusted_probability': adjusted_prob,
             'decimal_odds': decimal_odds,
             'american_odds': american_odds,
             'confidence': avg_confidence,
+            'uncertainty': avg_uncertainty,
             'total_edge': total_edge,
-            'expected_value': expected_value,
-            'kelly_bet_size': max(0, min(0.25, expected_value / (decimal_odds - 1))) if decimal_odds > 1 else 0
+            'expected_value': adjusted_expected_value,
+            'correlation_factor': correlation_factor,
+            'risk_score': risk_score,
+            'market_efficiency': market_efficiency,
+            'advanced_score': advanced_score,
+            'kelly_bet_size': max(0, min(0.25, adjusted_expected_value / (decimal_odds - 1))) if decimal_odds > 1 else 0
         }
+    
+    def _calculate_correlation_factor(self, bet_combination):
+        """Calculate correlation adjustment factor for parlay probability"""
+        if len(bet_combination) < 2:
+            return 1.0
+        
+        # Calculate pairwise correlations
+        correlations = []
+        for i in range(len(bet_combination)):
+            for j in range(i + 1, len(bet_combination)):
+                corr = self._get_leg_correlation(bet_combination[i], bet_combination[j])
+                correlations.append(corr)
+        
+        if not correlations:
+            return 1.0
+        
+        # Apply correlation adjustment
+        # Positive correlation reduces combined probability
+        # Negative correlation increases combined probability
+        avg_correlation = np.mean(correlations)
+        
+        # Adjustment factor based on correlation
+        if avg_correlation > 0:
+            # Positive correlation reduces probability
+            adjustment = 1 - (avg_correlation * 0.3)  # Max 30% reduction
+        else:
+            # Negative correlation increases probability
+            adjustment = 1 + (abs(avg_correlation) * 0.2)  # Max 20% increase
+        
+        return max(0.1, min(2.0, adjustment))  # Bound between 0.1 and 2.0
+    
+    def _calculate_parlay_risk_score(self, bet_combination):
+        """Calculate comprehensive risk score for parlay"""
+        if not bet_combination:
+            return 1.0
+        
+        # Individual leg risks
+        leg_risks = []
+        for bet in bet_combination:
+            confidence = bet.get('confidence', 0.5)
+            uncertainty = bet.get('uncertainty', 0.1)
+            edge = bet.get('edge', 0)
+            
+            # Risk increases with lower confidence, higher uncertainty, lower edge
+            leg_risk = (1 - confidence) * 0.4 + uncertainty * 0.4 + max(0, -edge) * 0.2
+            leg_risks.append(leg_risk)
+        
+        # Portfolio risk (diversification)
+        num_legs = len(bet_combination)
+        diversification_factor = 1 / np.sqrt(num_legs)  # More legs = more diversification
+        
+        # Correlation risk
+        correlation_risk = self._calculate_parlay_correlation(bet_combination)
+        
+        # Combined risk score
+        individual_risk = np.mean(leg_risks)
+        portfolio_risk = individual_risk * diversification_factor
+        total_risk = portfolio_risk + (correlation_risk * 0.3)
+        
+        return min(1.0, total_risk)
+    
+    def _calculate_market_efficiency(self, bet_combination):
+        """Calculate market efficiency score for parlay"""
+        if not bet_combination:
+            return 0.5
+        
+        efficiency_scores = []
+        for bet in bet_combination:
+            edge = bet.get('edge', 0)
+            public_pct = bet.get('public_percentage', 0.5)
+            sharp_money = bet.get('sharp_money', 0)
+            
+            # Efficiency based on edge, public sentiment, and sharp money
+            efficiency = (abs(edge) * 0.4 + 
+                        (1 - abs(public_pct - 0.5)) * 0.3 + 
+                        sharp_money * 0.3)
+            efficiency_scores.append(efficiency)
+        
+        return np.mean(efficiency_scores)
+    
+    def _calculate_advanced_score(self, expected_value, confidence, risk_score, market_efficiency, num_legs):
+        """Calculate advanced scoring for parlay ranking"""
+        # Base score from expected value
+        base_score = expected_value * 100
+        
+        # Confidence bonus
+        confidence_bonus = confidence * 20
+        
+        # Risk penalty
+        risk_penalty = risk_score * 30
+        
+        # Market efficiency bonus
+        market_bonus = market_efficiency * 15
+        
+        # Leg count penalty (fewer legs generally better)
+        leg_penalty = (num_legs - 2) * 5
+        
+        # Calculate final score
+        advanced_score = (base_score + confidence_bonus - risk_penalty + 
+                         market_bonus - leg_penalty)
+        
+        return max(0, advanced_score)
+    
+    def evaluate_parlay(self, bet_combination):
+        """Evaluate a parlay combination (backward compatibility)"""
+        return self.evaluate_advanced_parlay(bet_combination)
     
     def decimal_to_american_odds(self, decimal_odds):
         """Convert decimal odds to American odds"""
@@ -372,16 +782,21 @@ def create_mock_player_data():
     
     return mock_data
 
+# Backward compatibility class
+class ParlayPredictor(AdvancedParlayPredictor):
+    """Backward compatibility wrapper for AdvancedParlayPredictor"""
+    pass
+
 if __name__ == "__main__":
-    # Test the parlay predictor
-    predictor = ParlayPredictor()
+    # Test the advanced parlay predictor
+    predictor = AdvancedParlayPredictor()
     
     # Load player data
     player_data = predictor.load_player_data()
     
     if not player_data.empty:
-        # Calculate correlations
-        predictor.calculate_player_correlations(player_data)
+        # Calculate advanced correlations
+        predictor.calculate_advanced_correlations(player_data)
         
         # Train models
         predictor.train_player_prop_models(player_data)
@@ -389,7 +804,7 @@ if __name__ == "__main__":
         # Save models
         predictor.save_parlay_models()
         
-        print("Parlay prediction system initialized successfully!")
+        print("Advanced parlay prediction system initialized successfully!")
     else:
         print("Using mock data for testing...")
         
@@ -401,16 +816,20 @@ if __name__ == "__main__":
         
         mock_player_data = create_mock_player_data()
         
-        # Test parlay generation
+        # Test advanced parlay generation
         parlays = predictor.analyze_game_day_parlays(mock_games, mock_player_data)
         
-        print(f"\nGenerated {len(parlays)} parlay combinations:")
+        print(f"\nGenerated {len(parlays)} advanced parlay combinations:")
         for i, parlay in enumerate(parlays[:3], 1):
-            print(f"\nParlay {i}:")
+            print(f"\nAdvanced Parlay {i}:")
             print(f"  Legs: {len(parlay['legs'])}")
             for leg in parlay['legs']:
                 print(f"    - {leg}")
             print(f"  Combined Odds: {parlay['american_odds']:+d}")
             print(f"  Probability: {parlay['combined_probability']:.3f}")
+            print(f"  Adjusted Probability: {parlay.get('adjusted_probability', 0):.3f}")
             print(f"  Expected Value: {parlay['expected_value']:+.3f}")
+            print(f"  Advanced Score: {parlay.get('advanced_score', 0):.1f}")
+            print(f"  Risk Score: {parlay.get('risk_score', 0):.3f}")
+            print(f"  Market Efficiency: {parlay.get('market_efficiency', 0):.3f}")
             print(f"  Kelly Bet Size: {parlay['kelly_bet_size']:.1%}")

@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initScrollAnimations();
     initSmoothScrolling();
     initMobileMenu();
+    initFeaturesCarousel();
     initScrollToTop();
     initFormValidation();
 });
@@ -15,16 +16,25 @@ function initNavigation() {
     const navbar = document.querySelector('.navbar');
     const navLinks = document.querySelectorAll('.nav-link');
     
-    // Handle scroll effect on navbar
-    window.addEventListener('scroll', function() {
-        if (window.scrollY > 100) {
-            navbar.style.background = 'rgba(255, 255, 255, 0.98)';
-            navbar.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+    // Handle scroll effect on navbar using classes (better with responsive styles)
+    function updateNavbarState() {
+        const isMobile = window.innerWidth <= 768;
+        const atTop = window.scrollY < 80;
+
+        navbar.classList.toggle('scrolled', window.scrollY > 100);
+
+        // For mobile, use a transparent-on-hero style at the very top
+        if (isMobile && atTop) {
+            navbar.classList.add('on-hero');
         } else {
-            navbar.style.background = 'rgba(255, 255, 255, 0.95)';
-            navbar.style.boxShadow = 'none';
+            navbar.classList.remove('on-hero');
         }
-    });
+    }
+
+    window.addEventListener('scroll', updateNavbarState);
+    window.addEventListener('resize', debounce(updateNavbarState, 150));
+    // Initialize state
+    updateNavbarState();
     
     // Handle active nav link
     window.addEventListener('scroll', function() {
@@ -45,6 +55,143 @@ function initNavigation() {
             }
         });
     });
+}
+
+// Features carousel for mobile
+function initFeaturesCarousel() {
+    const featuresSection = document.querySelector('#features');
+    const grid = document.querySelector('.features-grid');
+    if (!featuresSection || !grid) return;
+
+    const ACTIVATED_CLASS = 'features-carousel-activated';
+
+    function buildCarousel() {
+        if (grid.classList.contains(ACTIVATED_CLASS)) return;
+
+        // Create wrapper elements
+        const carousel = document.createElement('div');
+        carousel.className = 'features-carousel';
+
+        const track = document.createElement('div');
+        track.className = 'features-carousel-track';
+
+        // Move cards into track
+        const cards = Array.from(grid.children);
+        cards.forEach(card => {
+            const slide = document.createElement('div');
+            slide.className = 'features-slide';
+            slide.appendChild(card);
+            track.appendChild(slide);
+        });
+
+        // Controls
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'carousel-nav prev';
+        prevBtn.setAttribute('aria-label', 'Previous');
+        prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'carousel-nav next';
+        nextBtn.setAttribute('aria-label', 'Next');
+        nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+
+        const dots = document.createElement('div');
+        dots.className = 'carousel-dots';
+
+        const slides = () => Array.from(track.querySelectorAll('.features-slide'));
+        let currentIndex = 0;
+
+        function update() {
+            const width = track.clientWidth;
+            track.scrollTo({ left: currentIndex * width, behavior: 'smooth' });
+            Array.from(dots.children).forEach((d, i) => {
+                d.classList.toggle('active', i === currentIndex);
+            });
+        }
+
+        function goNext() {
+            currentIndex = (currentIndex + 1) % slides().length;
+            update();
+        }
+
+        function goPrev() {
+            currentIndex = (currentIndex - 1 + slides().length) % slides().length;
+            update();
+        }
+
+        // Build dots
+        slides().forEach((_, i) => {
+            const dot = document.createElement('button');
+            dot.className = 'carousel-dot';
+            dot.setAttribute('aria-label', `Go to slide ${i + 1}`);
+            dot.addEventListener('click', function() {
+                currentIndex = i;
+                update();
+            });
+            dots.appendChild(dot);
+        });
+
+        // Touch swipe support
+        let startX = 0;
+        let isDown = false;
+        track.addEventListener('pointerdown', function(e) {
+            isDown = true; startX = e.clientX; track.setPointerCapture(e.pointerId);
+        });
+        track.addEventListener('pointerup', function(e) {
+            if (!isDown) return; isDown = false;
+            const dx = e.clientX - startX;
+            const threshold = track.clientWidth * 0.15;
+            if (dx > threshold) { goPrev(); }
+            else if (dx < -threshold) { goNext(); }
+        });
+
+        prevBtn.addEventListener('click', goPrev);
+        nextBtn.addEventListener('click', goNext);
+
+        // Assemble
+        carousel.appendChild(prevBtn);
+        carousel.appendChild(track);
+        carousel.appendChild(nextBtn);
+        carousel.appendChild(dots);
+
+        // Replace grid with carousel in DOM (but keep original for desktop restoration)
+        grid.parentNode.insertBefore(carousel, grid);
+        grid.style.display = 'none';
+        grid.classList.add(ACTIVATED_CLASS);
+
+        // Move existing cards now inside slides have original styling
+        carousel.dataset.originalGridSelector = '.features-grid';
+
+        // Ensure first dot is active
+        update();
+
+        // Resize handler to keep snap aligned
+        window.addEventListener('resize', debounce(update, 150));
+    }
+
+    function destroyCarousel() {
+        if (!grid.classList.contains(ACTIVATED_CLASS)) return;
+        const carousel = grid.previousElementSibling;
+        if (carousel && carousel.classList.contains('features-carousel')) {
+            // Move cards back to grid
+            const slides = Array.from(carousel.querySelectorAll('.features-slide'));
+            slides.forEach(slide => {
+                const card = slide.firstElementChild;
+                if (card) grid.appendChild(card);
+            });
+            carousel.remove();
+        }
+        grid.style.display = '';
+        grid.classList.remove(ACTIVATED_CLASS);
+    }
+
+    function evaluate() {
+        if (window.innerWidth <= 768) buildCarousel();
+        else destroyCarousel();
+    }
+
+    evaluate();
+    window.addEventListener('resize', debounce(evaluate, 200));
 }
 
 // Smooth scrolling for navigation links
