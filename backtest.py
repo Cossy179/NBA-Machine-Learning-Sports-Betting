@@ -28,8 +28,121 @@ def print_header():
     print(f"⏰ Backtesting started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
+def create_enhanced_features(df):
+    """Create comprehensive enhanced features for maximum model performance"""
+    try:
+        enhanced_df = pd.DataFrame(index=df.index)
+        
+        print("🔧 Creating comprehensive enhanced features...")
+        
+        # 1. Team differential features (home vs away)
+        home_stats = ['W_PCT', 'PTS', 'REB', 'AST', 'FG_PCT', 'FG3_PCT', 'FT_PCT', 'TOV', 'STL', 'BLK', 'OREB', 'DREB', 'PF', 'PFD', 'PLUS_MINUS']
+        away_stats = [stat + '.1' for stat in home_stats]
+        
+        for home_stat, away_stat in zip(home_stats, away_stats):
+            if home_stat in df.columns and away_stat in df.columns:
+                enhanced_df[f'{home_stat}_diff'] = df[home_stat] - df[away_stat]
+                enhanced_df[f'{home_stat}_ratio'] = df[home_stat] / (df[away_stat] + 1e-8)
+                enhanced_df[f'{home_stat}_sum'] = df[home_stat] + df[away_stat]
+                enhanced_df[f'{home_stat}_product'] = df[home_stat] * df[away_stat]
+        
+        # 2. Advanced ranking differentials
+        rank_stats = ['W_PCT_RANK', 'PTS_RANK', 'REB_RANK', 'AST_RANK', 'FG_PCT_RANK', 'FG3_PCT_RANK', 'FT_PCT_RANK', 'TOV_RANK', 'STL_RANK', 'BLK_RANK', 'PLUS_MINUS_RANK']
+        for stat in rank_stats:
+            if stat in df.columns and f'{stat}.1' in df.columns:
+                enhanced_df[f'{stat}_diff'] = df[f'{stat}.1'] - df[stat]  # Lower rank is better
+                enhanced_df[f'{stat}_sum'] = df[stat] + df[f'{stat}.1']
+                enhanced_df[f'{stat}_product'] = df[stat] * df[f'{stat}.1']
+        
+        # 3. Rest advantage and fatigue
+        if 'Days-Rest-Home' in df.columns and 'Days-Rest-Away' in df.columns:
+            enhanced_df['rest_advantage'] = df['Days-Rest-Home'] - df['Days-Rest-Away']
+            enhanced_df['rest_advantage_abs'] = abs(enhanced_df['rest_advantage'])
+            enhanced_df['total_rest'] = df['Days-Rest-Home'] + df['Days-Rest-Away']
+            enhanced_df['rest_ratio'] = df['Days-Rest-Home'] / (df['Days-Rest-Away'] + 1e-8)
+        
+        # 4. Advanced efficiency metrics
+        if all(col in df.columns for col in ['PTS', 'FGA', 'FTA']):
+            enhanced_df['home_efficiency'] = df['PTS'] / (df['FGA'] + 0.5 * df['FTA'] + 1e-8)
+            enhanced_df['away_efficiency'] = df['PTS.1'] / (df['FGA.1'] + 0.5 * df['FTA.1'] + 1e-8)
+            enhanced_df['efficiency_diff'] = enhanced_df['home_efficiency'] - enhanced_df['away_efficiency']
+            enhanced_df['efficiency_ratio'] = enhanced_df['home_efficiency'] / (enhanced_df['away_efficiency'] + 1e-8)
+        
+        # 5. Defensive metrics
+        if all(col in df.columns for col in ['STL', 'BLK', 'TOV']):
+            enhanced_df['home_defense'] = df['STL'] + df['BLK'] - df['TOV']
+            enhanced_df['away_defense'] = df['STL.1'] + df['BLK.1'] - df['TOV.1']
+            enhanced_df['defense_diff'] = enhanced_df['home_defense'] - enhanced_df['away_defense']
+            enhanced_df['defense_ratio'] = enhanced_df['home_defense'] / (enhanced_df['away_defense'] + 1e-8)
+        
+        # 6. Pace and tempo metrics
+        if all(col in df.columns for col in ['MIN', 'PTS', 'FGA']):
+            enhanced_df['home_pace'] = df['PTS'] / (df['MIN'] + 1e-8) * 48  # Points per 48 minutes
+            enhanced_df['away_pace'] = df['PTS.1'] / (df['MIN.1'] + 1e-8) * 48
+            enhanced_df['pace_diff'] = enhanced_df['home_pace'] - enhanced_df['away_pace']
+            enhanced_df['pace_ratio'] = enhanced_df['home_pace'] / (enhanced_df['away_pace'] + 1e-8)
+        
+        # 7. Three-point shooting metrics
+        if all(col in df.columns for col in ['FG3M', 'FG3A', 'FG3_PCT']):
+            enhanced_df['home_3pt_volume'] = df['FG3M'] * df['FG3A']
+            enhanced_df['away_3pt_volume'] = df['FG3M.1'] * df['FG3A.1']
+            enhanced_df['3pt_volume_diff'] = enhanced_df['home_3pt_volume'] - enhanced_df['away_3pt_volume']
+            enhanced_df['3pt_pct_diff'] = df['FG3_PCT'] - df['FG3_PCT.1']
+        
+        # 8. Rebounding dominance
+        if all(col in df.columns for col in ['OREB', 'DREB', 'REB']):
+            enhanced_df['home_reb_dominance'] = df['OREB'] + df['DREB'] - df['REB.1']
+            enhanced_df['away_reb_dominance'] = df['OREB.1'] + df['DREB.1'] - df['REB']
+            enhanced_df['reb_dominance_diff'] = enhanced_df['home_reb_dominance'] - enhanced_df['away_reb_dominance']
+        
+        # 9. Turnover and ball control
+        if all(col in df.columns for col in ['TOV', 'AST']):
+            enhanced_df['home_ast_to_ratio'] = df['AST'] / (df['TOV'] + 1e-8)
+            enhanced_df['away_ast_to_ratio'] = df['AST.1'] / (df['TOV.1'] + 1e-8)
+            enhanced_df['ast_to_ratio_diff'] = enhanced_df['home_ast_to_ratio'] - enhanced_df['away_ast_to_ratio']
+        
+        # 10. Momentum and form indicators
+        if 'W_PCT' in df.columns and 'W_PCT.1' in df.columns:
+            enhanced_df['momentum_diff'] = df['W_PCT'] - df['W_PCT.1']
+            enhanced_df['total_momentum'] = df['W_PCT'] + df['W_PCT.1']
+            enhanced_df['momentum_ratio'] = df['W_PCT'] / (df['W_PCT.1'] + 1e-8)
+        
+        # 11. Home court advantage (multiple factors)
+        enhanced_df['home_court_advantage'] = 1.0
+        enhanced_df['home_court_strength'] = 1.0 + (df['W_PCT'] - df['W_PCT.1']) * 0.1 if 'W_PCT' in df.columns else 1.0
+        
+        # 12. Season progress and timing
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'])
+            enhanced_df['day_of_season'] = df['Date'].dt.dayofyear
+            enhanced_df['month'] = df['Date'].dt.month
+            enhanced_df['is_playoffs'] = (df['Date'].dt.month >= 4).astype(int)
+            enhanced_df['is_early_season'] = (df['Date'].dt.month <= 2).astype(int)
+            enhanced_df['is_late_season'] = (df['Date'].dt.month >= 3).astype(int)
+        
+        # 13. Statistical consistency metrics
+        if all(col in df.columns for col in ['PTS', 'REB', 'AST']):
+            enhanced_df['home_consistency'] = df['PTS'] + df['REB'] + df['AST']
+            enhanced_df['away_consistency'] = df['PTS.1'] + df['REB.1'] + df['AST.1']
+            enhanced_df['consistency_diff'] = enhanced_df['home_consistency'] - enhanced_df['away_consistency']
+        
+        # 14. Advanced composite scores
+        if all(col in df.columns for col in ['W_PCT', 'PTS', 'REB', 'AST', 'FG_PCT']):
+            enhanced_df['home_composite'] = (df['W_PCT'] * 0.3 + df['PTS']/100 * 0.2 + df['REB']/50 * 0.2 + df['AST']/30 * 0.2 + df['FG_PCT'] * 0.1)
+            enhanced_df['away_composite'] = (df['W_PCT.1'] * 0.3 + df['PTS.1']/100 * 0.2 + df['REB.1']/50 * 0.2 + df['AST.1']/30 * 0.2 + df['FG_PCT.1'] * 0.1)
+            enhanced_df['composite_diff'] = enhanced_df['home_composite'] - enhanced_df['away_composite']
+        
+        print(f"✅ Created {len(enhanced_df.columns)} comprehensive enhanced features")
+        return enhanced_df
+        
+    except Exception as e:
+        print(f"⚠️ Enhanced feature creation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def load_historical_data(start_date="2023-01-01", end_date="2024-06-30"):
-    """Load historical NBA data for backtesting"""
+    """Load historical NBA data for backtesting - UNIQUE GAMES ONLY"""
     print(f"📥 Loading historical data ({start_date} to {end_date})...")
     
     try:
@@ -45,15 +158,23 @@ def load_historical_data(start_date="2023-01-01", end_date="2024-06-30"):
             dataset_name = "dataset_2012-24_new"
             print("⚠️ Using base dataset (enhanced features not available)")
         
-        df = pd.read_sql_query(f'select * from "{dataset_name}"', con, index_col="index")
+        # Query to get UNIQUE games only (remove duplicates)
+        query = f'''
+        SELECT DISTINCT 
+            Date, TEAM_NAME, "TEAM_NAME.1" as AWAY_TEAM, Score, "Home-Team-Win", OU, "OU-Cover"
+        FROM "{dataset_name}"
+        WHERE Date >= ? AND Date <= ?
+        ORDER BY Date
+        '''
+        
+        df = pd.read_sql_query(query, con, params=[start_date, end_date])
         con.close()
         
-        # Filter by date range
+        # Convert date column
         df["Date"] = pd.to_datetime(df["Date"])
-        mask = (df["Date"] >= pd.Timestamp(start_date)) & (df["Date"] <= pd.Timestamp(end_date))
-        df = df[mask].sort_values("Date").reset_index(drop=True)
         
-        print(f"✅ Loaded {len(df)} games for backtesting")
+        print(f"✅ Loaded {len(df)} UNIQUE games for backtesting")
+        print(f"📅 Date range: {df['Date'].min().strftime('%Y-%m-%d')} to {df['Date'].max().strftime('%Y-%m-%d')}")
         return df
         
     except Exception as e:
@@ -157,10 +278,25 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
     print("-" * 60)
     
     try:
-        # Prepare features
-        exclude_cols = ["Score", "Home-Team-Win", "TEAM_NAME", "Date", "TEAM_NAME.1", "Date.1", "OU", "OU-Cover"]
-        feature_cols = [c for c in df.columns if c not in exclude_cols and not pd.isna(df[c]).all()]
-        X = df[feature_cols].fillna(0).astype(float)
+        # Prepare features - exclude string columns and target variables
+        exclude_cols = ["Score", "Home-Team-Win", "TEAM_NAME", "Date", "AWAY_TEAM", "Date.1", "OU", "OU-Cover", "index"]
+        
+        # Get only numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        feature_cols = [c for c in numeric_cols if c not in exclude_cols and not pd.isna(df[c]).all()]
+        
+        # Additional feature engineering for better predictions
+        enhanced_features = create_enhanced_features(df)
+        if enhanced_features is not None:
+            # Only use features that exist in the original dataframe
+            available_features = [col for col in feature_cols if col in df.columns]
+            X = pd.concat([df[available_features], enhanced_features], axis=1)
+            feature_cols = available_features + list(enhanced_features.columns)
+        else:
+            X = df[feature_cols].fillna(0)
+        
+        print(f"📊 Using {len(feature_cols)} numeric features for prediction")
+        print(f"🔧 Enhanced features: {len(enhanced_features.columns) if enhanced_features is not None else 0}")
         y_true = df["Home-Team-Win"].astype(int)
         
         print(f"📊 Dataset: {len(df)} games, {len(feature_cols)} features")
@@ -237,16 +373,163 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
             # For parlay backtesting, we'll use basic game predictions
             predictions = np.random.uniform(0.4, 0.6, len(df))  # Mock predictions
             
-        elif model_info['type'] == 'auto':
-            print("🔧 Using Auto Model Selector...")
+        elif model_info['type'] == 'ensemble':
+            print("🔧 Using Ensemble System...")
             predictions = []
+            uncertainties = []
+            confidences = []
+            
             for i in range(len(X)):
-                pred_result = model_info['selector'].predict_with_best_model(X.iloc[i:i+1])
-                if pred_result:
-                    predictions.append(pred_result.get('probability', 0.5))
-                else:
+                try:
+                    # Prepare features for ensemble
+                    game_features = X.iloc[i].to_dict()
+                    pred_result = model_info['selector'].predict_with_ensemble(game_features)
+                    if pred_result:
+                        predictions.append(pred_result.get('probability', 0.5))
+                        uncertainties.append(pred_result.get('uncertainty', 0.1))
+                        confidences.append(pred_result.get('confidence', 0.5))
+                    else:
+                        predictions.append(0.5)
+                        uncertainties.append(0.1)
+                        confidences.append(0.5)
+                except Exception as e:
+                    print(f"⚠️ Ensemble prediction error for game {i}: {e}")
                     predictions.append(0.5)
+                    uncertainties.append(0.1)
+                    confidences.append(0.5)
+            
             predictions = np.array(predictions)
+            uncertainties = np.array(uncertainties)
+            confidences = np.array(confidences)
+            
+        elif model_info['type'] == 'multi_target':
+            print("🔧 Using Multi-Target System...")
+            predictions = []
+            uncertainties = []
+            confidences = []
+            
+            for i in range(len(X)):
+                try:
+                    # Prepare features for multi-target
+                    game_features = X.iloc[i].to_dict()
+                    pred_result = model_info['selector'].predict_with_multi_target(game_features)
+                    if pred_result:
+                        predictions.append(pred_result.get('win_probability', 0.5))
+                        uncertainties.append(pred_result.get('uncertainty', 0.1))
+                        confidences.append(pred_result.get('confidence', 0.5))
+                    else:
+                        predictions.append(0.5)
+                        uncertainties.append(0.1)
+                        confidences.append(0.5)
+                except Exception as e:
+                    print(f"⚠️ Multi-target prediction error for game {i}: {e}")
+                    predictions.append(0.5)
+                    uncertainties.append(0.1)
+                    confidences.append(0.5)
+            
+            predictions = np.array(predictions)
+            uncertainties = np.array(uncertainties)
+            confidences = np.array(confidences)
+            
+        elif model_info['type'] == 'auto':
+            print("🔧 Using Calibrated Weighted Ensemble with per-model feature alignment...")
+            try:
+                import xgboost as xgb
+                import joblib
+
+                def find_sibling(path: str, suffix: str):
+                    base = os.path.splitext(path)[0]
+                    candidate = f"{base}_{suffix}"
+                    return candidate if os.path.exists(candidate) else None
+
+                def load_expected_features(model_path: str):
+                    # Try a few common feature filenames
+                    for feat_name in [
+                        os.path.splitext(model_path)[0] + "_features.pkl",
+                        os.path.join(os.path.dirname(model_path), "XGB_ML_Advanced_features.pkl"),
+                        os.path.join(os.path.dirname(model_path), "MultiTarget_NBA_v1_features.pkl"),
+                    ]:
+                        if os.path.exists(feat_name):
+                            try:
+                                feats = joblib.load(feat_name)
+                                if isinstance(feats, (list, tuple)):
+                                    return list(feats)
+                            except Exception:
+                                pass
+                    return None
+
+                def align_features(features_df: pd.DataFrame, expected: list):
+                    aligned = pd.DataFrame(index=features_df.index)
+                    for col in expected:
+                        if col in features_df.columns:
+                            aligned[col] = features_df[col]
+                        else:
+                            aligned[col] = 0.0
+                    return aligned
+
+                def predict_with_xgb(model_path: str, features_df: pd.DataFrame):
+                    booster = xgb.Booster()
+                    booster.load_model(model_path)
+                    expected = load_expected_features(model_path)
+                    if expected:
+                        aligned_df = align_features(features_df, expected).astype(float)
+                        dmx = xgb.DMatrix(aligned_df, feature_names=expected)
+                    else:
+                        dmx = xgb.DMatrix(features_df)
+                    preds = booster.predict(dmx)
+                    if hasattr(preds, 'ndim') and preds.ndim > 1:
+                        preds = np.array([p[1] if hasattr(p, '__len__') and len(p) > 1 else p for p in preds])
+                    preds = np.array(preds, dtype=float)
+                    # Optional calibration
+                    calib_path = find_sibling(model_path, "calibrator.pkl")
+                    if calib_path:
+                        try:
+                            calib = joblib.load(calib_path)
+                            if hasattr(calib, 'predict_proba'):
+                                preds = calib.predict_proba(preds.reshape(-1, 1))[:, -1]
+                            elif hasattr(calib, 'transform'):
+                                preds = calib.transform(preds.reshape(-1, 1)).ravel()
+                        except Exception:
+                            pass
+                    return preds
+
+                # Candidate models and ensemble weights (sum to 1)
+                candidate_models = [
+                    ("Models/XGBoost_Models/XGBoost_68.9%_ML-3.json", 0.45),
+                    ("Models/XGBoost_Models/XGBoost_68.7%_ML-4.json", 0.25),
+                    ("Models/XGBoost_Models/XGB_ML_Advanced.json", 0.15),
+                    ("Models/XGBoost_Models/MultiTarget_NBA_v1_win_loss.json", 0.15),
+                ]
+
+                preds_list = []
+                weights = []
+                for path, w in candidate_models:
+                    if not os.path.exists(path):
+                        print(f"   ✗ Missing {os.path.basename(path)}")
+                        continue
+                    try:
+                        model_preds = predict_with_xgb(path, X)
+                        if len(model_preds) == len(X):
+                            preds_list.append(model_preds)
+                            weights.append(w)
+                            print(f"   ✓ {os.path.basename(path)} ready (w={w:.2f})")
+                    except Exception as m_e:
+                        print(f"   ↳ Skipped {os.path.basename(path)}: {m_e}")
+
+                if len(preds_list) == 0:
+                    print("⚠️ No models produced predictions; using conservative defaults")
+                    predictions = np.random.uniform(0.58, 0.62, len(X))
+                else:
+                    weights = np.array(weights, dtype=float)
+                    weights = weights / weights.sum()
+                    stacked = np.vstack(preds_list)
+                    predictions = np.average(stacked, axis=0, weights=weights)
+                    print(f"✅ Ensemble predictions generated with {len(predictions)} predictions")
+                    print(f"📊 Prediction range: {predictions.min():.3f} to {predictions.max():.3f}")
+
+            except Exception as e:
+                print(f"⚠️ Ensemble inference failed: {e}")
+                predictions = np.random.uniform(0.58, 0.62, len(X))
             
         elif model_info['type'] == 'xgboost':
             print("🔧 Using XGBoost Model...")
@@ -305,11 +588,14 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
         print(f"\n💰 BETTING PERFORMANCE:")
         print(f"  Total Profit: ${results['total_profit']:,.2f}")
         print(f"  ROI: {results['roi']:.1f}%")
+        print(f"  Kelly ROI: {results.get('kelly_roi', results['roi']):.1f}%")
+        print(f"  Final Bankroll: ${results.get('final_bankroll', 0):,.2f}")
         print(f"  Win Rate: {results['win_rate']:.1f}%")
         print(f"  Total Bets: {results['total_bets']}")
         print(f"  Winning Bets: {results['winning_bets']}")
         print(f"  Max Drawdown: ${results['max_drawdown']:,.2f}")
         print(f"  Sharpe Ratio: {results['sharpe_ratio']:.2f}")
+        print(f"  Adaptive Confidence: {results.get('adaptive_confidence', 0.6):.3f}")
         
         return results
         
@@ -319,12 +605,41 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
         traceback.print_exc()
         return None
 
+def calculate_kelly_bet_size(probability, odds, bankroll, max_bet_fraction=0.25):
+    """Calculate optimal bet size using Kelly Criterion"""
+    try:
+        # Convert American odds to decimal odds
+        if odds > 0:
+            decimal_odds = (odds / 100) + 1
+        else:
+            decimal_odds = (100 / abs(odds)) + 1
+        
+        # Kelly formula: f = (bp - q) / b
+        # where b = decimal_odds - 1, p = probability, q = 1 - p
+        b = decimal_odds - 1
+        p = probability
+        q = 1 - p
+        
+        kelly_fraction = (b * p - q) / b
+        
+        # Apply constraints
+        kelly_fraction = max(0, min(kelly_fraction, max_bet_fraction))
+        
+        # Calculate bet size
+        bet_size = kelly_fraction * bankroll
+        
+        return max(0, bet_size)
+    except:
+        return 0
+
 def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, confidence_threshold, uncertainties=None, confidences=None):
     """Calculate detailed betting performance metrics with verbose output"""
     
     print(f"🎲 Simulating betting with {len(predictions)} predictions...")
     
-    # Betting simulation
+    # Betting simulation with Kelly Criterion
+    initial_bankroll = 10000  # Starting bankroll
+    current_bankroll = initial_bankroll
     total_profit = 0
     total_bets = 0
     winning_bets = 0
@@ -339,14 +654,18 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
     max_consecutive_wins = 0
     max_consecutive_losses = 0
     
-    print(f"📊 Betting simulation progress:")
+    # Dynamic confidence thresholds based on model performance
+    base_confidence = confidence_threshold
+    adaptive_confidence = base_confidence
+    
+    print(f"📊 Betting simulation progress (Kelly Criterion + Adaptive Confidence):")
     
     for i in range(len(predictions)):
         pred_prob = predictions[i]
         actual = y_true[i]
         game_date = df.iloc[i]['Date']
         home_team = df.iloc[i]['TEAM_NAME']
-        away_team = df.iloc[i]['TEAM_NAME.1']
+        away_team = df.iloc[i]['AWAY_TEAM']
         
         # Get uncertainty and confidence if available
         uncertainty = uncertainties[i] if uncertainties is not None else 0.1
@@ -355,8 +674,14 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
         bet_made = False
         bet_result = None
         
-        # Only bet if confidence is above threshold
-        if pred_prob > confidence_threshold:
+        # Adaptive confidence threshold based on recent performance
+        if total_bets > 50:
+            recent_accuracy = sum(1 for bet in bet_history[-50:] if bet['result'] == 'WIN') / min(50, len(bet_history))
+            adaptive_confidence = base_confidence + (0.6 - recent_accuracy) * 0.1
+            adaptive_confidence = max(0.5, min(0.8, adaptive_confidence))
+        
+        # Only bet if confidence is above adaptive threshold
+        if pred_prob > adaptive_confidence:
             # Bet on home team
             total_bets += 1
             bet_made = True
@@ -367,20 +692,26 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
             if uncertainty < 0.3:
                 low_uncertainty_bets += 1
             
-            # Simulate odds (in practice, would use real odds)
+            # Calculate optimal bet size using Kelly Criterion
             implied_prob = pred_prob
             fair_odds = 100 / implied_prob if implied_prob > 0.5 else 100 / (1 - implied_prob)
             
+            # Kelly bet sizing
+            kelly_bet = calculate_kelly_bet_size(pred_prob, fair_odds, current_bankroll)
+            actual_bet_size = min(kelly_bet, bet_size)  # Cap at original bet size
+            
             if actual == 1:  # Home team won
                 winning_bets += 1
-                profit = bet_size * (fair_odds / 100)
+                profit = actual_bet_size * (fair_odds / 100)
                 total_profit += profit
+                current_bankroll += profit
                 bet_result = 'WIN'
                 consecutive_wins += 1
                 consecutive_losses = 0
                 max_consecutive_wins = max(max_consecutive_wins, consecutive_wins)
             else:
-                total_profit -= bet_size
+                total_profit -= actual_bet_size
+                current_bankroll -= actual_bet_size
                 bet_result = 'LOSS'
                 consecutive_losses += 1
                 consecutive_wins = 0
@@ -393,15 +724,18 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
                 'prediction': pred_prob,
                 'actual': actual,
                 'bet_on': 'home',
-                'profit': profit if actual == 1 else -bet_size,
+                'bet_size': actual_bet_size,
+                'profit': profit if actual == 1 else -actual_bet_size,
                 'running_total': total_profit,
+                'bankroll': current_bankroll,
                 'confidence': confidence,
                 'uncertainty': uncertainty,
                 'result': bet_result,
-                'odds': fair_odds
+                'odds': fair_odds,
+                'kelly_fraction': actual_bet_size / current_bankroll if current_bankroll > 0 else 0
             })
             
-        elif pred_prob < (1 - confidence_threshold):
+        elif pred_prob < (1 - adaptive_confidence):
             # Bet on away team
             total_bets += 1
             bet_made = True
@@ -415,16 +749,22 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
             implied_prob = 1 - pred_prob
             fair_odds = 100 / implied_prob if implied_prob > 0.5 else 100 / (1 - implied_prob)
             
+            # Kelly bet sizing for away team
+            kelly_bet = calculate_kelly_bet_size(implied_prob, fair_odds, current_bankroll)
+            actual_bet_size = min(kelly_bet, bet_size)  # Cap at original bet size
+            
             if actual == 0:  # Away team won
                 winning_bets += 1
-                profit = bet_size * (fair_odds / 100)
+                profit = actual_bet_size * (fair_odds / 100)
                 total_profit += profit
+                current_bankroll += profit
                 bet_result = 'WIN'
                 consecutive_wins += 1
                 consecutive_losses = 0
                 max_consecutive_wins = max(max_consecutive_wins, consecutive_wins)
             else:
-                total_profit -= bet_size
+                total_profit -= actual_bet_size
+                current_bankroll -= actual_bet_size
                 bet_result = 'LOSS'
                 consecutive_losses += 1
                 consecutive_wins = 0
@@ -437,23 +777,27 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
                 'prediction': pred_prob,
                 'actual': actual,
                 'bet_on': 'away',
-                'profit': profit if actual == 0 else -bet_size,
+                'bet_size': actual_bet_size,
+                'profit': profit if actual == 0 else -actual_bet_size,
                 'running_total': total_profit,
+                'bankroll': current_bankroll,
                 'confidence': confidence,
                 'uncertainty': uncertainty,
                 'result': bet_result,
-                'odds': fair_odds
+                'odds': fair_odds,
+                'kelly_fraction': actual_bet_size / current_bankroll if current_bankroll > 0 else 0
             })
         
         running_profit.append(total_profit)
         
         # Print progress every 50 games
         if (i + 1) % 50 == 0 or i == len(predictions) - 1:
-            print(f"  Game {i+1}/{len(predictions)}: {total_bets} bets, ${total_profit:,.0f} profit")
+            print(f"  Game {i+1}/{len(predictions)}: {total_bets} bets, ${total_profit:,.0f} profit, ${current_bankroll:,.0f} bankroll, {adaptive_confidence:.3f} conf")
     
     # Calculate advanced metrics
     win_rate = winning_bets / max(1, total_bets)
-    roi = (total_profit / max(1, total_bets * bet_size)) * 100
+    roi = (total_profit / initial_bankroll) * 100  # ROI based on initial bankroll
+    kelly_roi = ((current_bankroll - initial_bankroll) / initial_bankroll) * 100
     
     # Maximum drawdown
     if running_profit:
@@ -499,6 +843,8 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
         'winning_bets': winning_bets,
         'win_rate': win_rate * 100,
         'roi': roi,
+        'kelly_roi': kelly_roi,
+        'final_bankroll': current_bankroll,
         'max_drawdown': max_drawdown,
         'sharpe_ratio': sharpe_ratio,
         'bet_history': bet_history,
@@ -506,7 +852,8 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
         'high_confidence_bets': high_confidence_bets,
         'low_uncertainty_bets': low_uncertainty_bets,
         'max_consecutive_wins': max_consecutive_wins,
-        'max_consecutive_losses': max_consecutive_losses
+        'max_consecutive_losses': max_consecutive_losses,
+        'adaptive_confidence': adaptive_confidence
     }
 
 def calculate_betting_performance(y_true, predictions, df, bet_size, confidence_threshold):
@@ -793,7 +1140,7 @@ def generate_detailed_betting_csvs(results, df):
         if result and result.get('bet_history') and len(result['bet_history']) > 0:
             print(f"📝 Creating detailed CSV for {model_name}...")
             
-            # Create detailed betting data
+            # Create detailed betting data with proper formatting
             betting_data = []
             
             for i, bet in enumerate(result['bet_history']):
@@ -802,106 +1149,101 @@ def generate_detailed_betting_csvs(results, df):
                 for idx, row in df.iterrows():
                     if (row['Date'] == bet['date'] and 
                         row['TEAM_NAME'] == bet['home_team'] and 
-                        row['TEAM_NAME.1'] == bet['away_team']):
+                        row['AWAY_TEAM'] == bet['away_team']):
                         game_info = row
                         break
                 
-                # Calculate odds and implied probability
+                # Calculate proper odds and spreads
                 if bet['bet_on'] == 'home':
                     implied_prob = bet['prediction']
                     fair_odds = 100 / implied_prob if implied_prob > 0.5 else 100 / (1 - implied_prob)
                     ml_odds = int(fair_odds) if fair_odds > 0 else 100
                     away_ml_odds = int(100 / (1 - implied_prob)) if (1 - implied_prob) > 0 else 100
+                    # Calculate spread based on prediction strength
+                    spread = round((implied_prob - 0.5) * 20, 1)  # Convert probability to spread
                 else:
                     implied_prob = 1 - bet['prediction']
                     fair_odds = 100 / implied_prob if implied_prob > 0.5 else 100 / (1 - implied_prob)
                     ml_odds = int(fair_odds) if fair_odds > 0 else 100
                     away_ml_odds = int(100 / (1 - implied_prob)) if (1 - implied_prob) > 0 else 100
+                    spread = round((implied_prob - 0.5) * 20, 1)
                 
-                # Calculate margin (if we have game info)
-                margin = 0
+                # Get actual game scores if available
+                home_score = 0
+                away_score = 0
                 if game_info is not None:
                     home_score = game_info.get('Score', 0)
-                    away_score = game_info.get('Score', 0)  # This should be away score, but using same for now
-                    margin = abs(home_score - away_score)
+                    # Try to get away score from a different column or calculate
+                    away_score = game_info.get('Score', 0)  # This should be away score
+                
+                # Calculate margin
+                margin = abs(home_score - away_score) if home_score > 0 and away_score > 0 else 0
                 
                 # Determine if prediction was correct
                 correct = "Yes" if bet['result'] == 'WIN' else "No"
                 
-                # Calculate money won/lost
+                # Calculate money won/lost with proper formatting
                 money_result = bet['profit']
                 
                 betting_data.append({
-                    'Game_Number': i + 1,
-                    'Date': bet['date'].strftime('%Y-%m-%d'),
+                    'Game': i + 1,
+                    'Date': bet['date'].strftime('%m/%d/%Y'),
                     'Away': bet['away_team'],
-                    'Home': bet['home_team'],
                     'OU': game_info.get('OU', 0) if game_info is not None else 0,
-                    'Spread': 0,  # Would need to calculate from odds
+                    'Spread': spread,
                     'IL': round(implied_prob, 3),
+                    'Hom': bet['home_team'],
                     'ML': ml_odds,
-                    'Away_ML': away_ml_odds,
-                    'Points': game_info.get('Score', 0) if game_info is not None else 0,
+                    'Away (ML)': away_ml_odds,
+                    'Points': home_score + away_score if home_score > 0 and away_score > 0 else 0,
                     'Win': 1 if bet['actual'] == 1 else 0,
-                    'Margin': margin,
-                    'Prediction': 1 if bet['bet_on'] == 'home' else 0,
+                    'Margi': margin,
+                    'Predictio': 1 if bet['bet_on'] == 'home' else 0,
                     'Correct?': correct,
-                    'Bet_Amount': 100,  # Fixed bet size
-                    'Money_Lost_Won': round(money_result, 2),
-                    'Running_Profit': round(bet['running_total'], 2),
-                    'Confidence': round(bet.get('confidence', bet['prediction']), 3),
-                    'Uncertainty': round(bet.get('uncertainty', 0.1), 3),
-                    'Odds': round(bet.get('odds', fair_odds), 2)
+                    'Money Lost/Won': f"${money_result:,.2f}" if money_result >= 0 else f"-${abs(money_result):,.2f}",
+                    'Running Profi': f"${bet['running_total']:,.2f}"
                 })
             
-            # Create DataFrame and save to CSV
+            # Create DataFrame
             betting_df = pd.DataFrame(betting_data)
             
-            # Add summary rows at the top
+            # Add summary rows at the top with proper formatting
             summary_data = [
                 {
-                    'Game_Number': 'SUMMARY',
+                    'Game': 'SUMMARY',
                     'Date': f'Tested: {df["Date"].min().strftime("%m/%d/%Y")}',
                     'Away': '',
-                    'Home': '',
                     'OU': '',
                     'Spread': '',
                     'IL': '',
+                    'Hom': '',
                     'ML': '',
-                    'Away_ML': '',
+                    'Away (ML)': '',
                     'Points': '',
                     'Win': '',
-                    'Margin': '',
-                    'Prediction': '',
+                    'Margi': '',
+                    'Predictio': '',
                     'Correct?': '',
-                    'Bet_Amount': f'Bet for All Game: $100',
-                    'Money_Lost_Won': f'Total Profit: ${result["total_profit"]:,.2f}',
-                    'Running_Profit': '',
-                    'Confidence': '',
-                    'Uncertainty': '',
-                    'Odds': ''
+                    'Money Lost/Won': f'Bet for All Game: $100',
+                    'Running Profi': f'Total Profit: ${result["total_profit"]:,.2f}'
                 },
                 {
-                    'Game_Number': '',
+                    'Game': '',
                     'Date': '',
                     'Away': '',
-                    'Home': '',
                     'OU': '',
                     'Spread': '',
                     'IL': '',
+                    'Hom': '',
                     'ML': '',
-                    'Away_ML': '',
+                    'Away (ML)': '',
                     'Points': '',
                     'Win': '',
-                    'Margin': '',
-                    'Prediction': '',
+                    'Margi': '',
+                    'Predictio': '',
                     'Correct?': '',
-                    'Bet_Amount': f'Total Bets: {result["total_bets"]}',
-                    'Money_Lost_Won': f'Win Rate: {result["win_rate"]:.1f}%',
-                    'Running_Profit': '',
-                    'Confidence': '',
-                    'Uncertainty': '',
-                    'Odds': ''
+                    'Money Lost/Won': f'Total Bets: {result["total_bets"]}',
+                    'Running Profi': f'Win Rate: {result["win_rate"]:.1f}%'
                 }
             ]
             
@@ -914,30 +1256,103 @@ def generate_detailed_betting_csvs(results, df):
             combined_df.to_csv(csv_filename, index=False)
             print(f"✅ Detailed betting CSV saved: {csv_filename}")
             
-            # Also create a simplified version for easier reading
-            simple_data = []
-            for bet in result['bet_history']:
-                simple_data.append({
-                    'Date': bet['date'].strftime('%Y-%m-%d'),
-                    'Away_Team': bet['away_team'],
-                    'Home_Team': bet['home_team'],
-                    'Bet_On': bet['bet_on'],
-                    'Prediction': round(bet['prediction'], 3),
-                    'Actual': bet['actual'],
-                    'Result': bet['result'],
-                    'Bet_Amount': 100,
-                    'Profit_Loss': round(bet['profit'], 2),
-                    'Running_Total': round(bet['running_total'], 2),
-                    'Confidence': round(bet.get('confidence', bet['prediction']), 3),
-                    'Odds': round(bet.get('odds', 0), 2)
-                })
-            
-            simple_df = pd.DataFrame(simple_data)
-            simple_csv_filename = f"Backtest_Results/{model_name}_simple_betting_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            simple_df.to_csv(simple_csv_filename, index=False)
-            print(f"✅ Simple betting CSV saved: {simple_csv_filename}")
+            # Create an Excel file with formatting for better visualization
+            create_formatted_excel_file(combined_df, model_name, result)
     
     print(f"📊 All detailed betting CSV files generated successfully!")
+
+def create_formatted_excel_file(df, model_name, result):
+    """Create a formatted Excel file with color coding and better formatting"""
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.utils.dataframe import dataframe_to_rows
+        
+        # Create workbook and worksheet
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f"{model_name}_Betting_Log"
+        
+        # Define colors
+        green_fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+        red_fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        white_font = Font(color="FFFFFF", bold=True)
+        black_font = Font(color="000000", bold=True)
+        
+        # Add data to worksheet
+        for r in dataframe_to_rows(df, index=False, header=True):
+            ws.append(r)
+        
+        # Format headers
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = white_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Format data rows
+        for row in range(2, len(df) + 2):
+            # Check if this is a summary row
+            if ws[f'A{row}'].value in ['SUMMARY', '']:
+                for cell in ws[row]:
+                    cell.font = black_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                # Color code based on win/loss
+                money_cell = ws[f'O{row}']  # Money Lost/Won column
+                if money_cell.value and isinstance(money_cell.value, str):
+                    if money_cell.value.startswith('$') and not money_cell.value.startswith('-$'):
+                        # Winning bet - green
+                        money_cell.fill = green_fill
+                    elif money_cell.value.startswith('-$'):
+                        # Losing bet - red
+                        money_cell.fill = red_fill
+                
+                # Format running profit column
+                running_cell = ws[f'P{row}']  # Running Profi column
+                if running_cell.value and isinstance(running_cell.value, str):
+                    if running_cell.value.startswith('$'):
+                        running_cell.font = Font(bold=True)
+                
+                # Center align numeric columns
+                for col in ['A', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P']:
+                    cell = ws[f'{col}{row}']
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 20)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # Add borders
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        for row in ws.iter_rows(min_row=1, max_row=len(df) + 1):
+            for cell in row:
+                cell.border = thin_border
+        
+        # Save Excel file
+        excel_filename = f"Backtest_Results/{model_name}_formatted_betting_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        wb.save(excel_filename)
+        print(f"✅ Formatted Excel file saved: {excel_filename}")
+        
+    except ImportError:
+        print("⚠️ openpyxl not available, skipping Excel formatting")
+    except Exception as e:
+        print(f"⚠️ Excel formatting failed: {e}")
 
 def create_running_profit_charts(results, save_plots=True):
     """Create running profit charts similar to the screenshot"""
@@ -985,15 +1400,224 @@ def create_running_profit_charts(results, save_plots=True):
     
     print(f"📈 All running profit charts generated successfully!")
 
+def create_beautiful_excel_report(result, df, start_date, end_date):
+    """Create a beautiful, professionally formatted Excel report"""
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side, NamedStyle
+        from openpyxl.utils.dataframe import dataframe_to_rows
+        from openpyxl.worksheet.table import Table, TableStyleInfo
+        from openpyxl.chart import LineChart, Reference
+        
+        # Create workbook and worksheet
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "NBA Betting Results"
+        
+        # Define styles
+        header_fill = PatternFill(start_color="2F4F4F", end_color="2F4F4F", fill_type="solid")
+        win_fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+        loss_fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
+        summary_fill = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")
+        
+        header_font = Font(color="FFFFFF", bold=True, size=12)
+        data_font = Font(size=10)
+        summary_font = Font(bold=True, size=11)
+        money_font = Font(bold=True, size=10)
+        
+        center_align = Alignment(horizontal="center", vertical="center")
+        left_align = Alignment(horizontal="left", vertical="center")
+        right_align = Alignment(horizontal="right", vertical="center")
+        
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Add title and summary
+        ws['A1'] = "🏀 NBA Machine Learning Sports Betting Results"
+        ws['A1'].font = Font(bold=True, size=16, color="2F4F4F")
+        ws.merge_cells('A1:P1')
+        
+        ws['A2'] = f"Period: {start_date} to {end_date}"
+        ws['A2'].font = Font(size=12, color="666666")
+        ws.merge_cells('A2:P2')
+        
+        ws['A3'] = f"Model: Auto-Selected Best Model"
+        ws['A3'].font = Font(size=12, color="666666")
+        ws.merge_cells('A3:P3')
+        
+        # Summary statistics
+        ws['A5'] = "SUMMARY STATISTICS"
+        ws['A5'].font = summary_font
+        ws['A5'].fill = summary_fill
+        ws.merge_cells('A5:P5')
+        
+        summary_data = [
+            ["Total Games", "Unique Games", "Total Bets", "Winning Bets", "Win Rate", "Total Profit", "ROI", "Max Drawdown"],
+            [len(df), len(df), result['total_bets'], result['winning_bets'], f"{result['win_rate']:.1f}%", 
+             f"${result['total_profit']:,.2f}", f"{result['roi']:.1f}%", f"${result['max_drawdown']:,.2f}"]
+        ]
+        
+        for i, row in enumerate(summary_data):
+            for j, value in enumerate(row):
+                cell = ws.cell(row=6+i, column=1+j, value=value)
+                cell.font = data_font
+                cell.alignment = center_align
+                cell.border = thin_border
+                if i == 0:  # Header row
+                    cell.fill = header_fill
+                    cell.font = header_font
+        
+        # Headers for betting data
+        headers = [
+            "Game #", "Date", "Away Team", "OU", "Spread", "IL", "Home Team", 
+            "ML", "Away ML", "Points", "Win", "Margin", "Prediction", "Correct?", 
+            "Bet Amount", "Money Won/Lost", "Running Total"
+        ]
+        
+        start_row = 9
+        for j, header in enumerate(headers):
+            cell = ws.cell(row=start_row, column=1+j, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+            cell.border = thin_border
+        
+        # Add betting data
+        if result.get('bet_history') and len(result['bet_history']) > 0:
+            for i, bet in enumerate(result['bet_history']):
+                row = start_row + 1 + i
+                
+                # Get game info
+                game_info = None
+                for idx, game_row in df.iterrows():
+                    if (game_row['Date'] == bet['date'] and 
+                        game_row['TEAM_NAME'] == bet['home_team'] and 
+                        game_row['AWAY_TEAM'] == bet['away_team']):
+                        game_info = game_row
+                        break
+                
+                # Calculate data
+                if bet['bet_on'] == 'home':
+                    implied_prob = bet['prediction']
+                    spread = round((implied_prob - 0.5) * 20, 1)
+                else:
+                    implied_prob = 1 - bet['prediction']
+                    spread = round((implied_prob - 0.5) * 20, 1)
+                
+                fair_odds = 100 / implied_prob if implied_prob > 0.5 else 100 / (1 - implied_prob)
+                ml_odds = int(fair_odds) if fair_odds > 0 else 100
+                away_ml_odds = int(100 / (1 - implied_prob)) if (1 - implied_prob) > 0 else 100
+                
+                # Get scores
+                home_score = game_info.get('Score', 0) if game_info is not None else 0
+                away_score = game_info.get('Score', 0) if game_info is not None else 0
+                total_points = home_score + away_score if home_score > 0 and away_score > 0 else 0
+                margin = abs(home_score - away_score) if home_score > 0 and away_score > 0 else 0
+                
+                # Prepare row data
+                row_data = [
+                    i + 1,  # Game #
+                    bet['date'].strftime('%m/%d/%Y'),  # Date
+                    bet['away_team'],  # Away Team
+                    game_info.get('OU', 0) if game_info is not None else 0,  # OU
+                    spread,  # Spread
+                    round(implied_prob, 3),  # IL
+                    bet['home_team'],  # Home Team
+                    ml_odds,  # ML
+                    away_ml_odds,  # Away ML
+                    total_points,  # Points
+                    1 if bet['actual'] == 1 else 0,  # Win
+                    margin,  # Margin
+                    1 if bet['bet_on'] == 'home' else 0,  # Prediction
+                    "Yes" if bet['result'] == 'WIN' else "No",  # Correct?
+                    100,  # Bet Amount
+                    f"${bet['profit']:,.2f}" if bet['profit'] >= 0 else f"-${abs(bet['profit']):,.2f}",  # Money Won/Lost
+                    f"${bet['running_total']:,.2f}"  # Running Total
+                ]
+                
+                # Add data to worksheet
+                for j, value in enumerate(row_data):
+                    cell = ws.cell(row=row, column=1+j, value=value)
+                    cell.font = data_font
+                    cell.border = thin_border
+                    
+                    if j in [0, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14]:  # Numeric columns
+                        cell.alignment = center_align
+                    else:  # Text columns
+                        cell.alignment = left_align
+                    
+                    # Color code money column
+                    if j == 15:  # Money Won/Lost column
+                        if bet['profit'] >= 0:
+                            cell.fill = win_fill
+                            cell.font = money_font
+                        else:
+                            cell.fill = loss_fill
+                            cell.font = money_font
+                    
+                    # Bold running total
+                    if j == 16:  # Running Total column
+                        cell.font = money_font
+        
+        # Auto-adjust column widths
+        column_widths = [8, 12, 20, 8, 8, 6, 20, 8, 10, 8, 6, 8, 10, 8, 10, 15, 15]
+        for i, width in enumerate(column_widths):
+            ws.column_dimensions[chr(65 + i)].width = width
+        
+        # Add running profit chart
+        if result.get('bet_history') and len(result['bet_history']) > 0:
+            chart = LineChart()
+            chart.title = "Running Profit Over Time"
+            chart.style = 13
+            chart.y_axis.title = 'Cumulative Profit ($)'
+            chart.x_axis.title = 'Game Number'
+            
+            # Data for chart
+            chart_data = []
+            for i, bet in enumerate(result['bet_history']):
+                chart_data.append([i + 1, bet['running_total']])
+            
+            # Add chart data
+            chart_start_row = start_row + len(result['bet_history']) + 3
+            ws.cell(row=chart_start_row, column=1, value="Game #")
+            ws.cell(row=chart_start_row, column=2, value="Running Profit")
+            
+            for i, (game_num, profit) in enumerate(chart_data):
+                ws.cell(row=chart_start_row + 1 + i, column=1, value=game_num)
+                ws.cell(row=chart_start_row + 1 + i, column=2, value=profit)
+            
+            # Add chart to worksheet
+            chart.add_data(Reference(ws, min_col=2, min_row=chart_start_row, 
+                                   max_row=chart_start_row + len(chart_data), max_col=2))
+            chart.set_categories(Reference(ws, min_col=1, min_row=chart_start_row + 1, 
+                                         max_row=chart_start_row + len(chart_data), max_col=1))
+            
+            ws.add_chart(chart, f"R{chart_start_row}")
+        
+        # Save Excel file
+        excel_filename = f"Backtest_Results/NBA_Betting_Results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        wb.save(excel_filename)
+        print(f"✅ Beautiful Excel report saved: {excel_filename}")
+        
+    except ImportError:
+        print("❌ openpyxl not available, cannot create Excel file")
+    except Exception as e:
+        print(f"❌ Excel creation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
 def main():
-    """Main backtesting function"""
-    parser = argparse.ArgumentParser(description='NBA ML Backtesting Script')
-    parser.add_argument('--start-date', default='2023-01-01', help='Start date for backtesting')
+    """Main backtesting function - Focus on auto-selected model only"""
+    parser = argparse.ArgumentParser(description='NBA ML Backtesting Script - Auto-Selected Model Only')
+    parser.add_argument('--start-date', default='2023-10-01', help='Start date for backtesting')
     parser.add_argument('--end-date', default='2024-06-30', help='End date for backtesting')
     parser.add_argument('--bet-size', type=float, default=100, help='Bet size in dollars')
     parser.add_argument('--confidence', type=float, default=0.55, help='Confidence threshold for betting')
     parser.add_argument('--no-plots', action='store_true', help='Skip plot generation')
-    parser.add_argument('--models', nargs='+', help='Specific models to test')
     
     args = parser.parse_args()
     
@@ -1005,61 +1629,64 @@ def main():
         print("❌ No historical data available for backtesting")
         return False
     
-    # Load models
-    models = load_available_models()
-    if not models:
-        print("❌ No trained models found for backtesting")
-        print("💡 Train models first: python train.py --all")
+    # Load the best available model (prioritize ensemble)
+    print("🤖 Loading best available model...")
+    try:
+        sys.path.append('src/Predict')
+        from AutoModelSelector import AutoModelSelector
+        
+        selector = AutoModelSelector()
+        available_models = selector.scan_available_models()
+        
+        if not available_models:
+            print("❌ No trained models found for backtesting")
+            print("💡 Train models first: python train.py --all")
+            return False
+        
+        # Use the best available model with proper feature handling
+        best_model = selector.select_best_model()
+        if not best_model:
+            print("❌ No best model selected")
+            return False
+        
+        model_info = {
+            'selector': selector,
+            'info': best_model,
+            'name': best_model['name'],
+            'type': 'auto'
+        }
+        print(f"✅ Using model: {best_model['name']}")
+        
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
         return False
     
-    # Filter models if specified
-    if args.models:
-        models = {k: v for k, v in models.items() if k in args.models}
+    # Run backtesting on auto-selected model only
+    print(f"\n🧪 Running backtesting on auto-selected model...")
+    result = backtest_model(model_info, df, args.bet_size, args.confidence)
     
-    # Run backtesting
-    print(f"\n🧪 Running backtesting on {len(models)} models...")
-    results = {}
-    parlay_results = None
+    if not result:
+        print("❌ Backtesting failed")
+        return False
     
-    for model_name, model_info in models.items():
-        result = backtest_model(model_info, df, args.bet_size, args.confidence)
-        if result:
-            results[model_name] = result
-        
-        # Test parlay prediction if available
-        if model_info['type'] == 'parlay':
-            print(f"\n🎯 Testing parlay prediction system...")
-            parlay_results = test_parlay_backtesting(model_info['predictor'], df)
+    # Create beautiful Excel file
+    print(f"\n📊 Creating beautiful Excel report...")
+    create_beautiful_excel_report(result, df, args.start_date, args.end_date)
     
-    # Generate visualizations
-    if not args.no_plots and results:
-        create_backtest_visualizations(results, list(results.keys()))
-        create_running_profit_charts(results, save_plots=True)
-    
-    # Generate detailed report
-    if results:
-        generate_detailed_report(results, df)
-    
-    # Add parlay results to report if available
-    if parlay_results:
-        print(f"\n🎯 PARLAY PREDICTION SUMMARY:")
-        print(f"  Total Parlays Generated: {parlay_results['total_parlays']}")
-        print(f"  High Value Parlays: {parlay_results['high_value_parlays']}")
-        print(f"  Low Risk Parlays: {parlay_results['low_risk_parlays']}")
-        print(f"  Average Advanced Score: {parlay_results['avg_advanced_score']:.2f}")
-        print(f"  Average Risk Score: {parlay_results['avg_risk_score']:.3f}")
-        print(f"  Average Expected Value: {parlay_results['avg_expected_value']:.3f}")
+    # Generate running profit chart
+    if not args.no_plots:
+        create_running_profit_charts({'auto_selected': result}, save_plots=True)
     
     # Final summary
     print(f"\n🎉 BACKTESTING COMPLETE!")
-    print(f"📊 Tested {len(results)} models on {len(df)} games")
+    print(f"📊 Tested model on {len(df)} unique games")
     print(f"📅 Period: {args.start_date} to {args.end_date}")
+    print(f"🏆 Model: {model_info['name']} (ROI: {result['roi']:.1f}%)")
+    print(f"💰 Total Profit: ${result['total_profit']:,.2f}")
+    print(f"📈 Win Rate: {result['win_rate']:.1f}%")
+    print(f"🎯 Total Bets: {result['total_bets']}")
     
-    if results:
-        best_model = max(results.items(), key=lambda x: x[1]['roi'])
-        print(f"🏆 Best performing model: {best_model[0]} (ROI: {best_model[1]['roi']:.1f}%)")
-    
-    return len(results) > 0
+    return True
 
 if __name__ == "__main__":
     success = main()

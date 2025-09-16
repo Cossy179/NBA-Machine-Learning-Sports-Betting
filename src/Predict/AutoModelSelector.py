@@ -248,6 +248,78 @@ class AutoModelSelector:
     
     def predict_with_ensemble(self, game_features):
         """Make prediction using ensemble system"""
+        try:
+            # Load ensemble system if not already loaded
+            ensemble_system = self.load_ensemble_system()
+            if ensemble_system is None:
+                return None
+            
+            # Convert to DataFrame if needed
+            if isinstance(game_features, dict):
+                game_df = pd.DataFrame([game_features])
+            else:
+                game_df = game_features
+            
+            # Get prediction from ensemble
+            prediction = ensemble_system.predict(game_df)
+            
+            if prediction is not None:
+                return {
+                    'probability': float(prediction[0]) if hasattr(prediction, '__getitem__') else float(prediction),
+                    'confidence': 0.8,  # High confidence for ensemble
+                    'uncertainty': 0.1
+                }
+            else:
+                return None
+                
+        except Exception as e:
+            print(f"Error in ensemble prediction: {e}")
+            return None
+    
+    def predict_with_multi_target(self, game_features):
+        """Make prediction using multi-target system"""
+        try:
+            # Load multi-target system if not already loaded
+            multi_target_system = self.load_multi_target_system()
+            if multi_target_system is None:
+                return None
+            
+            # Convert to DataFrame if needed
+            if isinstance(game_features, dict):
+                game_df = pd.DataFrame([game_features])
+            else:
+                game_df = game_features
+            
+            # Get prediction from multi-target system
+            prediction = multi_target_system.predict(game_df)
+            
+            if prediction is not None:
+                return {
+                    'win_probability': float(prediction[0]) if hasattr(prediction, '__getitem__') else float(prediction),
+                    'confidence': 0.75,  # Good confidence for multi-target
+                    'uncertainty': 0.15
+                }
+            else:
+                return None
+                
+        except Exception as e:
+            print(f"Error in multi-target prediction: {e}")
+            return None
+    
+    def load_multi_target_system(self):
+        """Load multi-target prediction system"""
+        try:
+            import joblib
+            model_path = "Models/XGBoost_Models/multi_target_system.pkl"
+            if os.path.exists(model_path):
+                return joblib.load(model_path)
+            return None
+        except Exception as e:
+            print(f"Error loading multi-target system: {e}")
+            return None
+
+    def predict_with_ensemble_old(self, game_features):
+        """Make prediction using ensemble system (old method)"""
         ensemble_info = self.best_model['system']
         if ensemble_info is None:
             return None
