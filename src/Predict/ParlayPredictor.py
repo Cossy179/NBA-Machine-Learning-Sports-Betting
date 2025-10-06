@@ -361,9 +361,38 @@ class AdvancedParlayPredictor:
         
         # Limit combinations for performance - sort by confidence first
         all_bets_sorted = sorted(all_bets, key=lambda x: x['confidence'], reverse=True)
-        top_bets = all_bets_sorted[:30]  # Only use top 30 highest confidence bets
+        
+        # Ensure variety of stat types in top bets
+        top_bets = []
+        stat_counts = {'points': 0, 'rebounds': 0, 'assists': 0, 'threes': 0, 'steals_blocks': 0, 'game': 0}
+        max_per_stat = 8  # Max 8 of each stat type for variety
+        
+        for bet in all_bets_sorted:
+            # Determine stat type from description
+            desc = bet['description'].lower()
+            stat_type = 'game'
+            if 'points' in desc:
+                stat_type = 'points'
+            elif 'rebounds' in desc:
+                stat_type = 'rebounds'
+            elif 'assists' in desc:
+                stat_type = 'assists'
+            elif 'threes' in desc:
+                stat_type = 'threes'
+            elif 'steals_blocks' in desc:
+                stat_type = 'steals_blocks'
+            
+            # Add bet if we haven't maxed out this stat type
+            if stat_counts[stat_type] < max_per_stat:
+                top_bets.append(bet)
+                stat_counts[stat_type] += 1
+            
+            # Stop when we have 40 total bets
+            if len(top_bets) >= 40:
+                break
         
         print(f"   Using top {len(top_bets)} bets for parlay generation...")
+        print(f"   Stat variety: {stat_counts}")
         
         for num_legs in range(2, min(max_legs + 1, len(top_bets) + 1)):
             # Limit number of combinations per leg count

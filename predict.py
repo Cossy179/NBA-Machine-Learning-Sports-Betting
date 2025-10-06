@@ -965,52 +965,266 @@ def main():
                 max(p['kelly_home']['bet_amount'], p['kelly_away']['bet_amount'])
                 for p in predictions
             ])
-            print(f"Total Kelly Bet Amount: ${total_kelly:.0f}")
+            print(f"Total Kelly Bet Amount: ${total_kelly:.2f}")
             print(f"Bankroll Utilization: {total_kelly/args.bankroll:.1%}")
+            print(f"Remaining Bankroll: ${max(0, args.bankroll - total_kelly):.2f}")
+            
+            # Display bankroll allocation breakdown
+            print(f"\n💰 BANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
+            print("="*70)
+            
+            bet_num = 1
+            for pred in predictions:
+                if pred['kelly_home']['bet_amount'] > 0:
+                    pct = (pred['kelly_home']['bet_amount'] / args.bankroll) * 100
+                    print(f"  {bet_num}. {pred['home_team']} ML: ${pred['kelly_home']['bet_amount']:.2f} ({pct:.1f}%)")
+                    bet_num += 1
+                if pred['kelly_away']['bet_amount'] > 0:
+                    pct = (pred['kelly_away']['bet_amount'] / args.bankroll) * 100
+                    print(f"  {bet_num}. {pred['away_team']} ML: ${pred['kelly_away']['bet_amount']:.2f} ({pct:.1f}%)")
+                    bet_num += 1
+            
+            # Add top parlays to allocation if they have Kelly sizing
+            if args.parlays and parlays:
+                print(f"\n  💎 Top Parlays:")
+                for i, parlay in enumerate(parlays[:3], 1):
+                    if parlay['kelly_bet_size'] > 0:
+                        amount = args.bankroll * parlay['kelly_bet_size']
+                        pct = parlay['kelly_bet_size'] * 100
+                        print(f"  {bet_num}. Parlay #{i} ({len(parlay['legs'])} legs): ${amount:.2f} ({pct:.1f}%)")
+                        bet_num += 1
+            
+            print(f"\n  {'='*66}")
+            print(f"  TOTAL ALLOCATED: ${total_kelly:.2f} ({total_kelly/args.bankroll:.1%})")
+            print(f"  REMAINING: ${max(0, args.bankroll - total_kelly):.2f}")
     
     else:
         print("❌ No predictions could be generated")
         return False
     
-    # Save predictions
-    save_predictions(predictions, args.sportsbook)
+    # Save predictions to Excel with parlays and bankroll allocation
+    save_predictions_to_excel(predictions, parlays if args.parlays else [], args.sportsbook, args.bankroll)
     
     print(f"\n🎉 PREDICTION ANALYSIS COMPLETE!")
     print("💡 Remember: Bet responsibly and within your means!")
     
     return True
 
-def save_predictions(predictions, sportsbook):
-    """Save predictions to file"""
+def save_predictions_to_excel(predictions, parlays, sportsbook, bankroll):
+    """Save predictions to formatted Excel file with multiple sheets"""
     try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
         os.makedirs("Predictions", exist_ok=True)
+        filename = f"Predictions/predictions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         
-        # Create DataFrame
-        pred_data = []
-        for pred in predictions:
-            pred_data.append({
-                'Date': datetime.now().strftime('%Y-%m-%d'),
-                'Time': datetime.now().strftime('%H:%M:%S'),
-                'Home Team': pred['home_team'],
-                'Away Team': pred['away_team'],
-                'Predicted Winner': pred['prediction'],
-                'Home Probability': pred['home_probability'],
-                'Away Probability': pred['away_probability'],
-                'Confidence': pred['confidence'],
-                'Recommendation': pred['recommendation'],
-                'Kelly Home': pred['kelly_home']['bet_amount'],
-                'Kelly Away': pred['kelly_away']['bet_amount'],
-                'Sportsbook': sportsbook
+        # Create Excel writer
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            
+            # Sheet 1: Game Predictions
+            pred_data = []
+            for pred in predictions:
+                pred_data.append({
+                    'Game': f"{pred['away_team']} @ {pred['home_team']}",
+                    'Predicted Winner': pred['home_team'] if pred['prediction'] == 'HOME' else pred['away_team'],
+                    'Win Probability': f"{max(pred['home_probability'], pred['away_probability']):.1%}",
+                    'Confidence': f"{pred['confidence']:.1%}",
+                    'Recommendation': pred['recommendation'],
+                    'Kelly Bet (Home)': f"${pred['kelly_home']['bet_amount']:.2f}" if pred['kelly_home']['bet_amount'] > 0 else "-",
+                    'Kelly Bet (Away)': f"${pred['kelly_away']['bet_amount']:.2f}" if pred['kelly_away']['bet_amount'] > 0 else "-",
+                })
+            
+            df_games = pd.DataFrame(pred_data)
+            df_games.to_excel(writer, sheet_name='Game Predictions', index=False)
+            
+            # Format Game Predictions sheet
+            ws_games = writer.sheets['Game Predictions']
+            ws_games.column_dimensions['A'].width = 35
+            ws_games.column_dimensions['B'].width = 25
+            ws_games.column_dimensions['C'].width = 18
+            ws_games.column_dimensions['D'].width = 15
+            ws_games.column_dimensions['E'].width = 30
+            ws_games.column_dimensions['F'].width = 18
+            ws_games.column_dimensions['G'].width = 18
+            
+            # Style headers
+            header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF", size=12)
+            for cell in ws_games[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Sheet 2: Parlays
+            if parlays:
+                parlay_data = []
+                for i, parlay in enumerate(parlays[:10], 1):  # Top 10 parlays
+                    legs_text = "\n".join([f"{j}. {leg}" for j, leg in enumerate(parlay['legs'], 1)])
+                    parlay_data.append({
+                        'Parlay #': i,
+                        'Legs': legs_text,
+                        'American Odds': f"{parlay['american_odds']:+.0f}",
+                        'Win Probability': f"{parlay.get('adjusted_probability', parlay['combined_probability']):.1%}",
+                        'Confidence': f"{parlay['confidence']:.1%}",
+                        'Expected Value': f"{parlay['expected_value']:+.3f}",
+                        'Risk Score': f"{parlay.get('risk_score', 0):.2f}",
+                        'Kelly Bet Size': f"{parlay['kelly_bet_size']:.1%}"
+                    })
+                
+                df_parlays = pd.DataFrame(parlay_data)
+                df_parlays.to_excel(writer, sheet_name='Parlays', index=False)
+                
+                # Format Parlays sheet
+                ws_parlays = writer.sheets['Parlays']
+                ws_parlays.column_dimensions['A'].width = 10
+                ws_parlays.column_dimensions['B'].width = 50
+                ws_parlays.column_dimensions['C'].width = 15
+                ws_parlays.column_dimensions['D'].width = 18
+                ws_parlays.column_dimensions['E'].width = 15
+                ws_parlays.column_dimensions['F'].width = 18
+                ws_parlays.column_dimensions['G'].width = 15
+                ws_parlays.column_dimensions['H'].width = 18
+                
+                for cell in ws_parlays[1]:
+                    cell.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+                    cell.font = Font(bold=True, color="FFFFFF", size=12)
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # Wrap text for legs column
+                for row in range(2, len(parlay_data) + 2):
+                    ws_parlays[f'B{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+                    ws_parlays.row_dimensions[row].height = 60
+            
+            # Sheet 3: Bankroll Allocation
+            allocation_data = []
+            
+            # Add game bets
+            total_allocated = 0
+            for pred in predictions:
+                if pred['kelly_home']['bet_amount'] > 0:
+                    allocation_data.append({
+                        'Bet Type': 'Game ML',
+                        'Bet': f"{pred['home_team']} ML",
+                        'Amount': pred['kelly_home']['bet_amount'],
+                        'Percentage': f"{(pred['kelly_home']['bet_amount']/bankroll)*100:.1f}%"
+                    })
+                    total_allocated += pred['kelly_home']['bet_amount']
+                
+                if pred['kelly_away']['bet_amount'] > 0:
+                    allocation_data.append({
+                        'Bet Type': 'Game ML',
+                        'Bet': f"{pred['away_team']} ML",
+                        'Amount': pred['kelly_away']['bet_amount'],
+                        'Percentage': f"{(pred['kelly_away']['bet_amount']/bankroll)*100:.1f}%"
+                    })
+                    total_allocated += pred['kelly_away']['bet_amount']
+            
+            # Add parlay bets (if any have positive Kelly size)
+            if parlays:
+                for i, parlay in enumerate(parlays[:5], 1):
+                    if parlay['kelly_bet_size'] > 0:
+                        parlay_amount = bankroll * parlay['kelly_bet_size']
+                        allocation_data.append({
+                            'Bet Type': 'Parlay',
+                            'Bet': f"Parlay #{i} ({len(parlay['legs'])} legs)",
+                            'Amount': parlay_amount,
+                            'Percentage': f"{parlay['kelly_bet_size']*100:.1f}%"
+                        })
+                        total_allocated += parlay_amount
+            
+            # Add summary rows
+            allocation_data.append({'Bet Type': '', 'Bet': '', 'Amount': '', 'Percentage': ''})
+            allocation_data.append({
+                'Bet Type': 'TOTAL',
+                'Bet': 'Total Allocated',
+                'Amount': total_allocated,
+                'Percentage': f"{(total_allocated/bankroll)*100:.1f}%"
             })
+            allocation_data.append({
+                'Bet Type': 'REMAINING',
+                'Bet': 'Remaining Bankroll',
+                'Amount': max(0, bankroll - total_allocated),
+                'Percentage': f"{max(0, (bankroll - total_allocated)/bankroll)*100:.1f}%"
+            })
+            
+            df_allocation = pd.DataFrame(allocation_data)
+            df_allocation.to_excel(writer, sheet_name='Bankroll Allocation', index=False)
+            
+            # Format Bankroll Allocation sheet
+            ws_alloc = writer.sheets['Bankroll Allocation']
+            ws_alloc.column_dimensions['A'].width = 15
+            ws_alloc.column_dimensions['B'].width = 35
+            ws_alloc.column_dimensions['C'].width = 15
+            ws_alloc.column_dimensions['D'].width = 15
+            
+            for cell in ws_alloc[1]:
+                cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                cell.font = Font(bold=True, color="FFFFFF", size=12)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Format amounts as currency
+            for row in range(2, len(allocation_data) + 2):
+                if ws_alloc[f'C{row}'].value and ws_alloc[f'C{row}'].value != '':
+                    try:
+                        ws_alloc[f'C{row}'].number_format = '$#,##0.00'
+                    except:
+                        pass
+            
+            # Highlight totals
+            total_row = len(allocation_data) - 1
+            for col in ['A', 'B', 'C', 'D']:
+                ws_alloc[f'{col}{total_row}'].fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
+                ws_alloc[f'{col}{total_row}'].font = Font(bold=True)
+            
+            # Sheet 4: Summary
+            summary_data = [{
+                'Metric': 'Total Bankroll',
+                'Value': f"${bankroll:.2f}"
+            }, {
+                'Metric': 'Date',
+                'Value': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }, {
+                'Metric': 'Sportsbook',
+                'Value': sportsbook
+            }, {
+                'Metric': 'Games Analyzed',
+                'Value': len(predictions)
+            }, {
+                'Metric': 'Parlays Generated',
+                'Value': len(parlays) if parlays else 0
+            }, {
+                'Metric': 'Total Allocated',
+                'Value': f"${total_allocated:.2f}"
+            }, {
+                'Metric': 'Bankroll Utilization',
+                'Value': f"{(total_allocated/bankroll)*100:.1f}%"
+            }, {
+                'Metric': 'Remaining',
+                'Value': f"${max(0, bankroll - total_allocated):.2f}"
+            }]
+            
+            df_summary = pd.DataFrame(summary_data)
+            df_summary.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Format Summary sheet
+            ws_summary = writer.sheets['Summary']
+            ws_summary.column_dimensions['A'].width = 25
+            ws_summary.column_dimensions['B'].width = 25
+            
+            for cell in ws_summary[1]:
+                cell.fill = PatternFill(start_color="203764", end_color="203764", fill_type="solid")
+                cell.font = Font(bold=True, color="FFFFFF", size=12)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
         
-        df = pd.DataFrame(pred_data)
-        filename = f"Predictions/predictions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        df.to_csv(filename, index=False)
-        
-        print(f"💾 Predictions saved to: {filename}")
+        print(f"💾 Predictions saved to Excel: {filename}")
+        return filename
         
     except Exception as e:
-        print(f"⚠️ Could not save predictions: {e}")
+        print(f"⚠️ Could not save to Excel: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 if __name__ == "__main__":
     success = main()
