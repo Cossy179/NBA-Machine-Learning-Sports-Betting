@@ -267,6 +267,73 @@ def train_advanced_xgboost():
         print(f"❌ Advanced XGBoost training failed: {e}")
         return False
 
+def train_ultra_features():
+    """Train ultra-advanced feature engineering"""
+    print("\n🚀 Step 4b: Ultra-Advanced Feature Engineering")
+    print("-" * 50)
+    
+    try:
+        from UltraAdvanced_Features import UltraAdvancedFeatureEngine
+        
+        print("🔧 Creating ultra-advanced dataset with 100+ new features...")
+        print("  • Four Factors analysis (Dean Oliver methodology)")
+        print("  • Clutch performance metrics (close game, Q4, mental toughness)")
+        print("  • Advanced momentum indicators (multi-window, time-decay)")
+        print("  • Lineup synergy and chemistry metrics")
+        print("  • Shot distribution and efficiency analysis")
+        print("  • Pace and playing style metrics")
+        print("  • Matchup-specific interaction features")
+        print("  • Advanced betting market signals")
+        
+        engine = UltraAdvancedFeatureEngine()
+        enhanced_df = engine.enhance_dataset_ultra()
+        
+        print(f"✅ Ultra-advanced features created successfully")
+        print(f"   Total features in dataset: {len(enhanced_df.columns)}")
+        
+        return True
+        
+    except ImportError as e:
+        print(f"❌ Failed to import UltraAdvanced_Features: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Ultra-advanced feature engineering failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def train_super_advanced_xgboost():
+    """Train super advanced XGBoost ensemble"""
+    print("\n🌟 Step 4c: Super Advanced XGBoost Ensemble")
+    print("-" * 50)
+    
+    try:
+        from SuperAdvanced_XGBoost import SuperAdvancedXGBoostTrainer
+        
+        print("🔧 Training super advanced XGBoost ensemble...")
+        print("  • XGBoost DART (Dropouts meet Multiple Additive Regression Trees)")
+        print("  • LightGBM with advanced optimization")
+        print("  • CatBoost for categorical handling")
+        print("  • Advanced feature selection (mutual info + tree importance + XGBoost)")
+        print("  • Multi-model ensemble with dynamic weighting")
+        print("  • Isotonic regression calibration")
+        
+        trainer = SuperAdvancedXGBoostTrainer()
+        trainer.train_super_advanced_ensemble(n_trials=30)  # Reduced for speed
+        trainer.save_models("SuperAdvanced_XGB_v1")
+        
+        print("✅ Super advanced XGBoost ensemble trained successfully")
+        return True
+        
+    except ImportError as e:
+        print(f"❌ Failed to import SuperAdvanced_XGBoost: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Super advanced XGBoost training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 def train_neural_networks():
     """Train advanced neural network models with enhanced architectures"""
     print("\n🧠 Step 5: Advanced Neural Networks with Enhanced Architectures")
@@ -435,10 +502,13 @@ def main():
     parser.add_argument('--ensemble', action='store_true', help='Train ensemble models')
     parser.add_argument('--multi-target', action='store_true', help='Train multi-target models')
     parser.add_argument('--xgboost', action='store_true', help='Train advanced XGBoost')
+    parser.add_argument('--ultra-features', action='store_true', help='Train ultra-advanced features')
+    parser.add_argument('--super-xgboost', action='store_true', help='Train super advanced XGBoost ensemble')
     parser.add_argument('--neural', action='store_true', help='Train neural networks')
     parser.add_argument('--parlay', action='store_true', help='Train parlay prediction system')
     parser.add_argument('--online', action='store_true', help='Initialize online learning')
-    parser.add_argument('--all', action='store_true', help='Train all models')
+    parser.add_argument('--all', action='store_true', help='Train all models (traditional)')
+    parser.add_argument('--ultra', action='store_true', help='Train ultra-advanced models (NEW!)')
     parser.add_argument('--quick', action='store_true', help='Quick training (reduced epochs)')
     parser.add_argument('--dry-run', action='store_true', help='Validate imports and setup without training')
     
@@ -446,7 +516,8 @@ def main():
     
     # If no specific arguments provided, default to --all
     if not any([args.features, args.ensemble, args.multi_target, args.xgboost, 
-                args.neural, args.parlay, args.online, args.all]):
+                args.ultra_features, args.super_xgboost, args.neural, args.parlay, 
+                args.online, args.all, args.ultra]):
         args.all = True
     
     print_header()
@@ -495,6 +566,13 @@ def main():
     
     if args.all or args.xgboost:
         training_results['xgboost'] = train_advanced_xgboost()
+    
+    # NEW ULTRA-ADVANCED OPTIONS
+    if args.ultra or args.ultra_features:
+        training_results['ultra_features'] = train_ultra_features()
+    
+    if args.ultra or args.super_xgboost:
+        training_results['super_xgboost'] = train_super_advanced_xgboost()
     
     if args.all or args.neural:
         training_results['neural'] = train_neural_networks()

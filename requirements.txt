@@ -17,3 +17,8 @@ plotly>=5.15.0
 seaborn>=0.12.0
 requests>=2.31.0
 python-dotenv>=1.0.0
+# NEW: Ultra-advanced model requirements
+catboost>=1.2.0
+beautifulsoup4>=4.12.0
+scipy>=1.11.0
+lxml>=4.9.0
