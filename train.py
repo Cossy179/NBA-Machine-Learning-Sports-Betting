@@ -12,6 +12,14 @@ from datetime import datetime
 import numpy as np
 warnings.filterwarnings('ignore')
 
+# Ensure UTF-8 console to avoid Unicode errors on Windows
+try:
+    # Python 3.7+
+    sys.stdout.reconfigure(encoding='utf-8')  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(encoding='utf-8')  # type: ignore[attr-defined]
+except Exception:
+    pass
+
 # Add src directories to path once
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, 'src')
@@ -29,6 +37,79 @@ def print_header():
     print("🏀" + "="*70 + "🏀")
     print(f"⏰ Training started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
+
+def detect_and_configure_device(preferred: str = 'auto'):
+    """Detect CUDA GPU (e.g., RTX 3060) and configure frameworks to use it.
+    Falls back to CPU if unavailable. Prints a concise summary.
+    Returns a dict with device info and booleans.
+    """
+    info = {
+        'use_gpu': False,
+        'torch': {'available': False, 'device': 'cpu', 'name': None},
+        'tensorflow': {'available': False, 'gpus': []},
+        'xgboost': {'device': 'cpu', 'tree_method': 'hist'}
+    }
+    # Prefer CUDA if available
+    try:
+        import torch
+        if preferred != 'cpu' and torch.cuda.is_available():
+            info['use_gpu'] = True
+            info['torch']['available'] = True
+            info['torch']['device'] = 'cuda'
+            try:
+                info['torch']['name'] = torch.cuda.get_device_name(0)
+            except Exception:
+                info['torch']['name'] = 'CUDA GPU'
+        else:
+            info['torch']['available'] = True
+            info['torch']['device'] = 'cpu'
+    except Exception:
+        pass
+
+    try:
+        import tensorflow as tf
+        gpus = tf.config.list_physical_devices('GPU')
+        info['tensorflow']['available'] = len(gpus) > 0
+        info['tensorflow']['gpus'] = [g.name if hasattr(g, 'name') else str(g) for g in gpus]
+        if info['use_gpu'] and gpus:
+            # Enable memory growth for stability
+            try:
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Configure XGBoost default device via env for trainers to read
+    if info['use_gpu']:
+        os.environ['XGB_DEFAULT_DEVICE'] = 'cuda'
+        os.environ['XGB_DEFAULT_TREE_METHOD'] = 'gpu_hist'
+        info['xgboost']['device'] = 'cuda'
+        info['xgboost']['tree_method'] = 'gpu_hist'
+    else:
+        os.environ['XGB_DEFAULT_DEVICE'] = 'cpu'
+        os.environ['XGB_DEFAULT_TREE_METHOD'] = 'hist'
+
+    # Public flag for our trainers to consume
+    os.environ['USE_GPU'] = '1' if info['use_gpu'] else '0'
+
+    # Print concise summary
+    print("🖥️ Compute Device")
+    print("-" * 50)
+    if info['use_gpu']:
+        gpu_name = info['torch']['name'] or (info['tensorflow']['gpus'][0] if info['tensorflow']['gpus'] else 'CUDA GPU')
+        print(f"  • Using GPU (CUDA): {gpu_name}")
+        print(f"  • XGBoost: device=cuda, tree_method=gpu_hist")
+    else:
+        print("  • Using CPU fallback (no CUDA detected or forced)")
+        print(f"  • XGBoost: device=cpu, tree_method=hist")
+    if info['tensorflow']['gpus']:
+        print(f"  • TensorFlow GPUs: {len(info['tensorflow']['gpus'])}")
+    if info['torch']['available']:
+        print(f"  • PyTorch device: {info['torch']['device']}")
+    print()
+    return info
 
 def validate_imports():
     """Validate that all required modules can be imported"""
@@ -369,6 +450,8 @@ def main():
         args.all = True
     
     print_header()
+    # Detect and display compute device (GPU/CPU) and configure libs
+    detect_and_configure_device()
     
     # Validate imports before starting
     all_imports_valid = validate_imports()

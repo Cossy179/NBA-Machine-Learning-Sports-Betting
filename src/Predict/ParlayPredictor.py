@@ -313,9 +313,11 @@ class AdvancedParlayPredictor:
         
         all_bets = []
         
-        # Add game predictions with enhanced features
+        # Add game predictions with enhanced features - use lower threshold for parlay generation
+        effective_min_confidence = min(min_confidence * 0.5, 0.15)  # At least 15% or half of requested
+        
         for game, pred in game_predictions.items():
-            if pred.get('confidence', 0) >= min_confidence:
+            if pred.get('confidence', 0) >= effective_min_confidence:
                 all_bets.append({
                     'type': 'game',
                     'description': f"{game} - {pred.get('recommendation', 'ML')}",
@@ -332,7 +334,7 @@ class AdvancedParlayPredictor:
         # Add player prop predictions with enhanced features
         for player, props in player_predictions.items():
             for prop_type, pred in props.items():
-                if pred.get('confidence', 0) >= min_confidence and pred.get('recommendation') != 'PASS':
+                if pred.get('confidence', 0) >= effective_min_confidence and pred.get('recommendation') != 'PASS':
                     all_bets.append({
                         'type': 'player_prop',
                         'description': f"{player} {prop_type} {pred.get('recommendation')} {pred.get('line')}",
@@ -347,18 +349,38 @@ class AdvancedParlayPredictor:
                     })
         
         if len(all_bets) < 2:
-            print("Insufficient high-confidence bets for parlays")
+            print(f"Insufficient bets for parlays (found {len(all_bets)}, need 2+)")
+            print(f"Note: Effective confidence threshold: {effective_min_confidence:.1%}")
             return []
         
         # Advanced parlay generation with correlation modeling
         parlay_combinations = []
         
-        # 1. Generate all possible combinations
-        for num_legs in range(2, min(max_legs + 1, len(all_bets) + 1)):
-            for combo in combinations(all_bets, num_legs):
+        # 1. Generate combinations (limit for performance)
+        print(f"   Total available bets: {len(all_bets)}")
+        
+        # Limit combinations for performance - sort by confidence first
+        all_bets_sorted = sorted(all_bets, key=lambda x: x['confidence'], reverse=True)
+        top_bets = all_bets_sorted[:30]  # Only use top 30 highest confidence bets
+        
+        print(f"   Using top {len(top_bets)} bets for parlay generation...")
+        
+        for num_legs in range(2, min(max_legs + 1, len(top_bets) + 1)):
+            # Limit number of combinations per leg count
+            combo_count = 0
+            max_combos_per_leg = 100  # Limit to 100 combinations per leg count
+            
+            for combo in combinations(top_bets, num_legs):
+                if combo_count >= max_combos_per_leg:
+                    break
+                    
                 parlay = self.evaluate_advanced_parlay(combo)
-                if parlay['expected_value'] > 0:  # Only positive EV parlays
+                # Lower EV threshold to allow more parlays
+                if parlay['expected_value'] > -0.05:  # Allow slightly negative EV for analysis
                     parlay_combinations.append(parlay)
+                    combo_count += 1
+        
+        print(f"   Generated {len(parlay_combinations)} initial parlay combinations")
         
         # 2. Apply correlation-based filtering
         parlay_combinations = self._filter_correlated_parlays(parlay_combinations)
@@ -379,8 +401,9 @@ class AdvancedParlayPredictor:
         filtered_parlays = []
         
         for parlay in parlay_combinations:
-            legs = parlay['legs']
-            correlation_score = self._calculate_parlay_correlation(legs)
+            # Use bet_objects instead of legs for correlation calculation
+            bet_objects = parlay.get('bet_objects', [])
+            correlation_score = self._calculate_parlay_correlation(bet_objects)
             
             # Only include parlays with reasonable correlation
             if correlation_score < 0.8:  # Threshold for maximum correlation
@@ -450,7 +473,7 @@ class AdvancedParlayPredictor:
         """Optimize parlays based on risk metrics"""
         for parlay in parlay_combinations:
             # Calculate risk metrics
-            legs = parlay['legs']
+            legs = parlay.get('bet_objects', [])
             
             # Variance-based risk
             probabilities = [leg['probability'] for leg in legs]
@@ -486,7 +509,7 @@ class AdvancedParlayPredictor:
     def _optimize_parlay_market(self, parlay_combinations):
         """Optimize parlays based on market factors"""
         for parlay in parlay_combinations:
-            legs = parlay['legs']
+            legs = parlay.get('bet_objects', [])
             
             # Market efficiency score
             market_scores = []
@@ -525,6 +548,7 @@ class AdvancedParlayPredictor:
         total_edge = 0
         total_uncertainty = 0
         descriptions = []
+        bet_objects = []  # Keep full bet objects for correlation analysis
         correlation_adjustments = []
         
         for bet in bet_combination:
@@ -533,6 +557,7 @@ class AdvancedParlayPredictor:
             total_edge += bet['edge']
             total_uncertainty += bet.get('uncertainty', 0.1)
             descriptions.append(bet['description'])
+            bet_objects.append(bet)  # Preserve full bet object
         
         # Apply correlation adjustments
         correlation_factor = self._calculate_correlation_factor(bet_combination)
@@ -565,7 +590,8 @@ class AdvancedParlayPredictor:
         )
         
         return {
-            'legs': descriptions,
+            'legs': descriptions,  # String descriptions for display
+            'bet_objects': bet_objects,  # Full objects for correlation analysis
             'num_legs': len(bet_combination),
             'combined_probability': combined_prob,
             'adjusted_probability': adjusted_prob,
