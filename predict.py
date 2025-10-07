@@ -793,7 +793,7 @@ def generate_parlays(predictions, min_confidence=0.3, max_legs=6):
         
         # Generate advanced parlay combinations
         parlays = parlay_predictor.generate_advanced_parlay_combinations(
-            high_conf_games,
+            high_conf_games, 
             player_predictions,
             max_legs=max_legs,
             min_confidence=min_confidence * 0.8  # Lower threshold for individual legs
