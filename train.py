@@ -319,7 +319,7 @@ def train_super_advanced_xgboost():
         print("  • Isotonic regression calibration")
         
         trainer = SuperAdvancedXGBoostTrainer()
-        trainer.train_super_advanced_ensemble(n_trials=30)  # Reduced for speed
+        trainer.train_super_advanced_ensemble(n_trials=12)  # Optimized: 12 trials = ~20-30 min
         trainer.save_models("SuperAdvanced_XGB_v1")
         
         print("✅ Super advanced XGBoost ensemble trained successfully")

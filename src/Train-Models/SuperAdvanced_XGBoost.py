@@ -180,27 +180,30 @@ class SuperAdvancedXGBoostTrainer:
         return X_train_selected, X_val_selected, self.selected_features
     
     def optimize_xgboost_dart(self, X_train, y_train, X_val, y_val, n_trials=50):
-        """Optimize XGBoost with DART booster"""
-        print("\n⚡ Optimizing XGBoost DART...")
+        """Optimize XGBoost with DART booster - OPTIMIZED VERSION"""
+        from tqdm import tqdm
+        print("\n⚡ Optimizing XGBoost DART (Fast Mode)...")
+        
+        # Progress tracking
+        pbar = tqdm(total=n_trials, desc="XGBoost DART Trials", unit="trial")
         
         def objective(trial):
             params = {
-                'booster': 'dart',  # DART booster
+                'booster': 'dart',
                 'objective': 'binary:logistic',
                 'eval_metric': 'logloss',
-                'eta': trial.suggest_float('eta', 0.005, 0.3, log=True),
-                'max_depth': trial.suggest_int('max_depth', 3, 12),
-                'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
-                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
-                'lambda': trial.suggest_float('lambda', 0.01, 10.0, log=True),
-                'alpha': trial.suggest_float('alpha', 0.01, 10.0, log=True),
-                'gamma': trial.suggest_float('gamma', 0.0, 5.0),
-                # DART-specific parameters
-                'sample_type': trial.suggest_categorical('sample_type', ['uniform', 'weighted']),
-                'normalize_type': trial.suggest_categorical('normalize_type', ['tree', 'forest']),
-                'rate_drop': trial.suggest_float('rate_drop', 0.0, 0.5),
-                'skip_drop': trial.suggest_float('skip_drop', 0.0, 0.5),
+                'eta': trial.suggest_float('eta', 0.01, 0.2, log=True),  # Narrower range
+                'max_depth': trial.suggest_int('max_depth', 4, 8),  # Narrower range
+                'min_child_weight': trial.suggest_int('min_child_weight', 1, 7),
+                'subsample': trial.suggest_float('subsample', 0.7, 1.0),  # Higher minimum
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 1.0),
+                'lambda': trial.suggest_float('lambda', 0.1, 5.0, log=True),
+                'alpha': trial.suggest_float('alpha', 0.01, 2.0, log=True),
+                'gamma': trial.suggest_float('gamma', 0.0, 2.0),  # Lower range
+                'sample_type': 'uniform',  # Fixed for speed
+                'normalize_type': 'tree',  # Fixed for speed
+                'rate_drop': trial.suggest_float('rate_drop', 0.0, 0.3),
+                'skip_drop': trial.suggest_float('skip_drop', 0.0, 0.3),
                 'tree_method': self.tree_method,
                 'device': self.device,
                 'random_state': 42
@@ -212,41 +215,56 @@ class SuperAdvancedXGBoostTrainer:
             model = xgb.train(
                 params,
                 dtrain,
-                num_boost_round=2000,
+                num_boost_round=1000,  # Reduced from 2000
                 evals=[(dval, "val")],
-                early_stopping_rounds=100,
+                early_stopping_rounds=50,  # More aggressive
                 verbose_eval=False
             )
             
             y_pred_proba = model.predict(dval)
-            return log_loss(y_val, y_pred_proba)
+            loss = log_loss(y_val, y_pred_proba)
+            
+            pbar.update(1)
+            # Safely access best_value
+            try:
+                pbar.set_postfix({'best_loss': f'{study.best_value:.4f}'})
+            except:
+                pbar.set_postfix({'loss': f'{loss:.4f}'})
+            
+            return loss
         
         study = optuna.create_study(direction='minimize', study_name='xgb_dart')
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+        optuna.logging.set_verbosity(optuna.logging.WARNING)  # Reduce output
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         
-        print(f"Best validation log loss: {study.best_value:.4f}")
+        pbar.close()
+        print(f"✅ Best validation log loss: {study.best_value:.4f}")
         return study.best_params
     
     def optimize_lightgbm(self, X_train, y_train, X_val, y_val, n_trials=50):
-        """Optimize LightGBM"""
-        print("\n💡 Optimizing LightGBM...")
+        """Optimize LightGBM - OPTIMIZED VERSION"""
+        from tqdm import tqdm
+        print("\n💡 Optimizing LightGBM (Fast Mode)...")
+        
+        pbar = tqdm(total=n_trials, desc="LightGBM Trials", unit="trial")
         
         def objective(trial):
             params = {
                 'objective': 'binary',
                 'metric': 'binary_logloss',
                 'boosting_type': 'gbdt',
-                'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
-                'num_leaves': trial.suggest_int('num_leaves', 20, 150),
-                'max_depth': trial.suggest_int('max_depth', 3, 12),
-                'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
-                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 10.0, log=True),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 10.0, log=True),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
+                'num_leaves': trial.suggest_int('num_leaves', 31, 100),  # Narrower range
+                'max_depth': trial.suggest_int('max_depth', 4, 8),  # Narrower range
+                'min_child_samples': trial.suggest_int('min_child_samples', 10, 50),
+                'subsample': trial.suggest_float('subsample', 0.7, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 1.0),
+                'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 2.0, log=True),
+                'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 2.0, log=True),
                 'device': 'gpu' if self.use_gpu else 'cpu',
                 'verbose': -1,
-                'random_state': 42
+                'random_state': 42,
+                'force_col_wise': True  # Faster
             }
             
             dtrain = lgb.Dataset(X_train, label=y_train)
@@ -255,39 +273,53 @@ class SuperAdvancedXGBoostTrainer:
             model = lgb.train(
                 params,
                 dtrain,
-                num_boost_round=2000,
+                num_boost_round=1000,  # Reduced from 2000
                 valid_sets=[dval],
-                callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)]
+                callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]  # More aggressive
             )
             
             y_pred_proba = model.predict(X_val)
-            return log_loss(y_val, y_pred_proba)
+            loss = log_loss(y_val, y_pred_proba)
+            
+            pbar.update(1)
+            # Safely access best_value
+            try:
+                pbar.set_postfix({'best_loss': f'{study.best_value:.4f}'})
+            except:
+                pbar.set_postfix({'loss': f'{loss:.4f}'})
+            
+            return loss
         
         study = optuna.create_study(direction='minimize', study_name='lightgbm')
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         
-        print(f"Best validation log loss: {study.best_value:.4f}")
+        pbar.close()
+        print(f"✅ Best validation log loss: {study.best_value:.4f}")
         return study.best_params
     
     def optimize_catboost(self, X_train, y_train, X_val, y_val, n_trials=50):
-        """Optimize CatBoost"""
+        """Optimize CatBoost - OPTIMIZED VERSION"""
         if not CATBOOST_AVAILABLE:
             print("⚠️ CatBoost not available, skipping...")
             return None
         
-        print("\n🐱 Optimizing CatBoost...")
+        from tqdm import tqdm
+        print("\n🐱 Optimizing CatBoost (Fast Mode)...")
+        
+        pbar = tqdm(total=n_trials, desc="CatBoost Trials", unit="trial")
         
         def objective(trial):
             params = {
                 'loss_function': 'Logloss',
                 'eval_metric': 'Logloss',
-                'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
-                'depth': trial.suggest_int('depth', 3, 10),
-                'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 0.1, 10.0, log=True),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
+                'depth': trial.suggest_int('depth', 4, 8),  # Narrower range
+                'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 0.1, 5.0, log=True),
                 'bagging_temperature': trial.suggest_float('bagging_temperature', 0.0, 1.0),
-                'random_strength': trial.suggest_float('random_strength', 0.0, 10.0),
-                'iterations': 2000,
-                'early_stopping_rounds': 100,
+                'random_strength': trial.suggest_float('random_strength', 0.0, 5.0),
+                'iterations': 1000,  # Reduced from 2000
+                'early_stopping_rounds': 50,  # More aggressive
                 'task_type': 'GPU' if self.use_gpu else 'CPU',
                 'verbose': False,
                 'random_state': 42
@@ -301,37 +333,62 @@ class SuperAdvancedXGBoostTrainer:
             )
             
             y_pred_proba = model.predict_proba(X_val)[:, 1]
-            return log_loss(y_val, y_pred_proba)
+            loss = log_loss(y_val, y_pred_proba)
+            
+            pbar.update(1)
+            # Safely access best_value
+            try:
+                pbar.set_postfix({'best_loss': f'{study.best_value:.4f}'})
+            except:
+                pbar.set_postfix({'loss': f'{loss:.4f}'})
+            
+            return loss
         
         study = optuna.create_study(direction='minimize', study_name='catboost')
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         
-        print(f"Best validation log loss: {study.best_value:.4f}")
+        pbar.close()
+        print(f"✅ Best validation log loss: {study.best_value:.4f}")
         return study.best_params
     
-    def train_super_advanced_ensemble(self, n_trials=50):
-        """Train super advanced ensemble with multiple boosting algorithms"""
+    def train_super_advanced_ensemble(self, n_trials=12):
+        """Train super advanced ensemble - OPTIMIZED with comprehensive progress tracking"""
+        import time
+        from datetime import timedelta
+        
+        start_time = time.time()
+        
         print("\n" + "="*70)
-        print("🚀 SUPER ADVANCED XGBOOST TRAINING SYSTEM")
+        print("🚀 SUPER ADVANCED XGBOOST TRAINING SYSTEM (OPTIMIZED)")
         print("="*70)
+        print(f"⏱️  Estimated Total Time: ~20-30 minutes (with GPU)")
+        print(f"🔢 Optuna Trials: {n_trials} per model")
+        print("="*70 + "\n")
         
-        # Load data
+        # Step 1: Load data
+        print("📂 Step 1/7: Loading Data...")
+        step_start = time.time()
         data = self.load_data()
+        step_time = time.time() - step_start
+        print(f"✅ Completed in {step_time:.1f}s\n")
         
-        # Feature selection
+        # Step 2: Feature selection
+        print("🔍 Step 2/7: Advanced Feature Selection...")
+        step_start = time.time()
         X_train_selected, X_val_selected, selected_features = self.advanced_feature_selection(
             data['X_train'], data['y_train'], data['X_val'], data['y_val'],
             top_k=min(200, data['X_train'].shape[1])
         )
+        step_time = time.time() - step_start
+        print(f"✅ Completed in {step_time:.1f}s\n")
         
-        # Also get test set with selected features
-        selected_indices = [i for i, col in enumerate(self.feature_cols) if col in selected_features]
-        X_test_selected = data['X_test'].iloc[:, selected_indices]
+        # Also get test set with selected features (must maintain same column order as training!)
+        X_test_selected = data['X_test'][X_val_selected.columns].copy()
         
-        # 1. Train XGBoost DART
-        print("\n" + "="*70)
-        print("MODEL 1: XGBoost DART")
-        print("="*70)
+        # Step 3: Train XGBoost DART
+        print("⚡ Step 3/7: Training XGBoost DART...")
+        step_start = time.time()
         dart_params = self.optimize_xgboost_dart(X_train_selected, data['y_train'], 
                                                   X_val_selected, data['y_val'], n_trials)
         
@@ -357,11 +414,12 @@ class SuperAdvancedXGBoostTrainer:
         )
         
         self.models['xgb_dart'] = dart_model
+        step_time = time.time() - step_start
+        print(f"✅ XGBoost DART completed in {step_time/60:.1f} minutes\n")
         
-        # 2. Train LightGBM
-        print("\n" + "="*70)
-        print("MODEL 2: LightGBM")
-        print("="*70)
+        # Step 4: Train LightGBM
+        print("💡 Step 4/7: Training LightGBM...")
+        step_start = time.time()
         lgb_params = self.optimize_lightgbm(X_train_selected, data['y_train'],
                                            X_val_selected, data['y_val'], n_trials)
         
@@ -386,12 +444,13 @@ class SuperAdvancedXGBoostTrainer:
         )
         
         self.models['lightgbm'] = lgb_model
+        step_time = time.time() - step_start
+        print(f"✅ LightGBM completed in {step_time/60:.1f} minutes\n")
         
-        # 3. Train CatBoost (if available)
+        # Step 5: Train CatBoost (if available)
         if CATBOOST_AVAILABLE:
-            print("\n" + "="*70)
-            print("MODEL 3: CatBoost")
-            print("="*70)
+            print("🐱 Step 5/7: Training CatBoost...")
+            step_start = time.time()
             cb_params = self.optimize_catboost(X_train_selected, data['y_train'],
                                               X_val_selected, data['y_val'], n_trials)
             
@@ -414,11 +473,14 @@ class SuperAdvancedXGBoostTrainer:
                 )
                 
                 self.models['catboost'] = cb_model
+                step_time = time.time() - step_start
+                print(f"✅ CatBoost completed in {step_time/60:.1f} minutes\n")
+        else:
+            print("⚠️  Step 5/7: CatBoost skipped (not available)\n")
         
-        # 4. Calibrate all models
-        print("\n" + "="*70)
-        print("CALIBRATING MODELS")
-        print("="*70)
+        # Step 6: Calibrate all models
+        print("🎯 Step 6/7: Calibrating Models...")
+        step_start = time.time()
         
         for model_name, model in self.models.items():
             print(f"Calibrating {model_name}...")
@@ -437,10 +499,12 @@ class SuperAdvancedXGBoostTrainer:
             calibrator.fit(val_probs, data['y_val'])
             self.calibrators[model_name] = calibrator
         
-        # 5. Calculate ensemble weights based on validation performance
-        print("\n" + "="*70)
-        print("CALCULATING ENSEMBLE WEIGHTS")
-        print("="*70)
+        step_time = time.time() - step_start
+        print(f"✅ Calibration completed in {step_time:.1f}s\n")
+        
+        # Step 7: Calculate ensemble weights and evaluate
+        print("📊 Step 7/7: Calculating Ensemble Weights & Final Evaluation...")
+        step_start = time.time()
         
         model_scores = {}
         for model_name, model in self.models.items():
@@ -507,6 +571,20 @@ class SuperAdvancedXGBoostTrainer:
         print(f"Precision:   {precision_score(data['y_test'], y_pred):.4f}")
         print(f"Recall:      {recall_score(data['y_test'], y_pred):.4f}")
         print(f"F1 Score:    {f1_score(data['y_test'], y_pred):.4f}")
+        
+        step_time = time.time() - step_start
+        print(f"\n✅ Evaluation completed in {step_time:.1f}s")
+        
+        # Print total time
+        total_time = time.time() - start_time
+        print("\n" + "="*70)
+        print("🎉 TRAINING COMPLETE!")
+        print("="*70)
+        print(f"⏱️  Total Training Time: {total_time/60:.1f} minutes ({timedelta(seconds=int(total_time))})")
+        print(f"🎯 Models Trained: {len(self.models)}")
+        print(f"📊 Features Selected: {len(self.selected_features)}")
+        print(f"✅ All models calibrated and ready for prediction!")
+        print("="*70 + "\n")
         
         return data
     

@@ -675,11 +675,11 @@ class UltraAdvancedFeatureEngine:
         })
         
         print("Calculating ultra-advanced features...")
+        from tqdm import tqdm
+        
         ultra_features = []
         
-        for idx, row in df.iterrows():
-            if idx % 500 == 0:
-                print(f"Processing row {idx}/{len(df)}")
+        for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing games", unit="game"):
             
             home_team = row['TEAM_NAME']
             away_team = row['TEAM_NAME.1']

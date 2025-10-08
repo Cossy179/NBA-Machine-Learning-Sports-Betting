@@ -144,7 +144,72 @@ class AdvancedParlayPredictor:
                 if 'AST' in player_data.columns:
                     player_data['PLAYMAKING_VOLUME'] = player_data['AST'] / (player_data['GP'] + 0.01)
             
-            print(f"   ✓ Added {len([c for c in player_data.columns if any(x in c for x in ['PER_MIN', 'VARIANCE', 'LOAD', 'RECENT_FORM', 'DELTA', 'RATIO', 'OPP_'])])} engineered features")
+            # 11. LAST 5 GAMES PERFORMANCE (hot/cold streaks)
+            if 'PLAYER_ID' in player_data.columns:
+                print("   Calculating last 5 games performance...")
+                for stat in ['PTS', 'AST', 'REB', 'FG3M']:
+                    if stat in player_data.columns:
+                        player_data[f'{stat}_LAST5'] = player_data.groupby('PLAYER_ID')[stat].transform(
+                            lambda x: x.rolling(window=min(5, len(x)), min_periods=1).mean()
+                        )
+                        # Momentum indicator (last 5 vs season avg)
+                        player_data[f'{stat}_MOMENTUM'] = player_data[f'{stat}_LAST5'] - player_data.groupby('PLAYER_ID')[stat].transform('mean')
+            
+            # 12. HOME/AWAY SPLITS (if location data available)
+            # Create placeholder for home/away performance differential
+            player_data['HOME_AWAY_FACTOR'] = 1.0  # Neutral by default
+            
+            # 13. USAGE RATE (percentage of team plays used)
+            if 'MIN' in player_data.columns and 'FGA' in player_data.columns:
+                # Approximate usage rate
+                player_data['USAGE_RATE'] = (player_data['FGA'] + 0.44 * player_data.get('FTA', 0) + player_data.get('TOV', 0)) / (player_data['MIN'] + 0.01)
+            
+            # 14. PACE-ADJUSTED STATS
+            player_data['PACE_FACTOR'] = 100.0  # League average pace
+            if 'PTS' in player_data.columns:
+                player_data['PACE_ADJ_PTS'] = player_data['PTS'] * (100.0 / player_data['PACE_FACTOR'])
+            
+            # 15. FLOOR/CEILING INDICATORS (min/max recent games)
+            if 'PLAYER_ID' in player_data.columns:
+                for stat in ['PTS', 'AST', 'REB', 'FG3M']:
+                    if stat in player_data.columns:
+                        player_data[f'{stat}_FLOOR'] = player_data.groupby('PLAYER_ID')[stat].transform(
+                            lambda x: x.rolling(window=min(10, len(x)), min_periods=1).min()
+                        )
+                        player_data[f'{stat}_CEILING'] = player_data.groupby('PLAYER_ID')[stat].transform(
+                            lambda x: x.rolling(window=min(10, len(x)), min_periods=1).max()
+                        )
+                        player_data[f'{stat}_RANGE'] = player_data[f'{stat}_CEILING'] - player_data[f'{stat}_FLOOR']
+            
+            # 16. MINUTES CONSISTENCY (starter vs bench impact)
+            if 'MIN' in player_data.columns and 'PLAYER_ID' in player_data.columns:
+                player_data['MIN_CONSISTENCY'] = player_data.groupby('PLAYER_ID')['MIN'].transform('std')
+                player_data['IS_STARTER'] = (player_data['MIN'] > 25).astype(float)
+            
+            # 17. SHOT SELECTION (2P vs 3P ratio)
+            if 'FGA' in player_data.columns and 'FG3A' in player_data.columns:
+                player_data['TWO_PT_ATTEMPTS'] = player_data['FGA'] - player_data['FG3A']
+                player_data['TWO_TO_THREE_RATIO'] = player_data['TWO_PT_ATTEMPTS'] / (player_data['FG3A'] + 0.01)
+            
+            # 18. FREE THROW DEPENDENCY (points from FT)
+            if 'FTM' in player_data.columns and 'PTS' in player_data.columns:
+                player_data['FT_POINTS_PCT'] = player_data['FTM'] / (player_data['PTS'] + 0.01)
+                player_data['FT_RATE'] = player_data['FTA'] / (player_data['FGA'] + 0.01)
+            
+            # 19. PLAYMAKING EFFICIENCY
+            if 'AST' in player_data.columns and 'TOV' in player_data.columns:
+                player_data['PURE_POINT_RATING'] = (player_data['AST'] * 2) / (player_data['TOV'] + player_data['AST'] + 0.01)
+            
+            # 20. DEFENSIVE CONTRIBUTION (for rebounds/steals/blocks)
+            if all(col in player_data.columns for col in ['STL', 'BLK', 'MIN']):
+                player_data['DEFENSIVE_IMPACT'] = (player_data['STL'] + player_data['BLK']) / (player_data['MIN'] + 0.01)
+            
+            engineered_count = len([c for c in player_data.columns if any(x in c for x in 
+                ['PER_MIN', 'VARIANCE', 'LOAD', 'RECENT_FORM', 'DELTA', 'RATIO', 'OPP_', 
+                 'LAST5', 'MOMENTUM', 'USAGE', 'PACE', 'FLOOR', 'CEILING', 'RANGE',
+                 'CONSISTENCY', 'STARTER', 'TWO_TO_THREE', 'FT_POINTS', 'PURE_POINT', 'DEFENSIVE'])])
+            
+            print(f"   ✓ Added {engineered_count} engineered features for maximum accuracy")
             
             return player_data
             
@@ -283,12 +348,17 @@ class AdvancedParlayPredictor:
         if player_data.empty:
             return
         
-        # EXPANDED feature set for better predictions with ALL engineered features
+        # MASSIVELY EXPANDED feature set for MAXIMUM accuracy
         base_features = ['MIN', 'FGA', 'FG_PCT', 'GP', 'FGM', 'FTA', 'FTM', 'FT_PCT', 'FG3A', 'FG3_PCT', 
-                        'OREB', 'DREB', 'TOV', 'PF']
+                        'OREB', 'DREB', 'TOV', 'PF', 'STL', 'BLK']
+        
+        # Include ALL engineered features
         engineered_features = [col for col in player_data.columns if any(x in col for x in 
                               ['PER_MIN', 'VARIANCE', 'LOAD', 'VOLUME', 'RATE', 'EFFICIENCY', 
-                               'RECENT_FORM', 'DELTA', 'RATIO', 'OPP_', 'SHOOTING', 'PLAYMAKING'])]
+                               'RECENT_FORM', 'DELTA', 'RATIO', 'OPP_', 'SHOOTING', 'PLAYMAKING',
+                               'LAST5', 'MOMENTUM', 'USAGE', 'PACE', 'FLOOR', 'CEILING', 'RANGE',
+                               'CONSISTENCY', 'STARTER', 'TWO_TO_THREE', 'FT_POINTS', 'PURE_POINT', 
+                               'DEFENSIVE', 'HOME_AWAY'])]
         
         feature_cols = base_features + engineered_features
         available_features = [col for col in feature_cols if col in player_data.columns]
@@ -339,21 +409,22 @@ class AdvancedParlayPredictor:
                 models = {}
                 predictions = {}
                 
-                # Model 1: XGBoost (tuned for MAXIMUM accuracy)
-                print(f"      Training XGBoost (1000 estimators)...")
+                # Model 1: XGBoost (tuned for MAXIMUM accuracy with feature importance)
+                print(f"      Training XGBoost (1500 estimators - LONGER!)...")
                 xgb_model = xgb.XGBRegressor(
-                    n_estimators=1000,  # TRAIN LONGER for better accuracy
-                    max_depth=10,       # Deeper trees for complex patterns
-                    learning_rate=0.03, # Slower learning for maximum precision
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    min_child_weight=2,
-                    reg_alpha=0.05,
-                    reg_lambda=0.5,
-                    gamma=0.1,
+                    n_estimators=1500,  # TRAIN EVEN LONGER for better accuracy
+                    max_depth=12,       # Even deeper trees for complex patterns
+                    learning_rate=0.02, # Even slower learning for maximum precision
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    min_child_weight=1,
+                    reg_alpha=0.01,
+                    reg_lambda=0.3,
+                    gamma=0.05,
                     random_state=42,
                     n_jobs=-1,
-                    early_stopping_rounds=50
+                    early_stopping_rounds=75,
+                    importance_type='gain'
                 )
                 xgb_model.fit(X_train, y_train, 
                             eval_set=[(X_test, y_test)],
@@ -362,75 +433,81 @@ class AdvancedParlayPredictor:
                 predictions['xgboost'] = xgb_model.predict(X_test)
                 
                 # Model 2: LightGBM (fast and HIGHLY accurate)
-                print(f"      Training LightGBM (1000 estimators)...")
+                print(f"      Training LightGBM (1500 estimators - LONGER!)...")
                 lgb_model = lgb.LGBMRegressor(
-                    n_estimators=1000,  # TRAIN LONGER
-                    max_depth=10,
-                    learning_rate=0.03,
-                    num_leaves=100,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_alpha=0.05,
-                    reg_lambda=0.5,
-                    min_child_samples=10,
+                    n_estimators=1500,  # TRAIN EVEN LONGER
+                    max_depth=12,
+                    learning_rate=0.02,
+                    num_leaves=150,
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    reg_alpha=0.01,
+                    reg_lambda=0.3,
+                    min_child_samples=5,
+                    min_split_gain=0.01,
                     random_state=42,
                     verbose=-1,
                     n_jobs=-1,
-                    force_col_wise=True
+                    force_col_wise=True,
+                    boosting_type='gbdt'
                 )
                 lgb_model.fit(X_train, y_train,
                             eval_set=[(X_test, y_test)])
                 models['lightgbm'] = lgb_model
                 predictions['lightgbm'] = lgb_model.predict(X_test)
                 
-                # Model 3: Random Forest (robust and deep)
-                print(f"      Training Random Forest (500 trees)...")
+                # Model 3: Random Forest (robust and VERY deep)
+                print(f"      Training Random Forest (800 trees - LONGER!)...")
                 rf_model = RandomForestRegressor(
-                    n_estimators=500,  # TRAIN LONGER
-                    max_depth=15,      # Deeper trees
-                    min_samples_split=3,
+                    n_estimators=800,  # TRAIN MUCH LONGER
+                    max_depth=20,      # Much deeper trees
+                    min_samples_split=2,
                     min_samples_leaf=1,
-                    max_features='sqrt',
-                    max_samples=0.85,
+                    max_features='log2',  # Changed for better feature selection
+                    max_samples=0.9,
                     bootstrap=True,
                     random_state=42,
-                    n_jobs=-1
+                    n_jobs=-1,
+                    oob_score=True
                 )
                 rf_model.fit(X_train, y_train)
                 models['random_forest'] = rf_model
                 predictions['random_forest'] = rf_model.predict(X_test)
                 
                 # Model 4: Gradient Boosting (extremely precise)
-                print(f"      Training Gradient Boosting (800 estimators)...")
+                print(f"      Training Gradient Boosting (1200 estimators - LONGER!)...")
                 gb_model = GradientBoostingRegressor(
-                    n_estimators=800,   # TRAIN MUCH LONGER
-                    max_depth=8,
-                    learning_rate=0.03,
-                    subsample=0.85,
-                    min_samples_split=3,
+                    n_estimators=1200,   # TRAIN MUCH MUCH LONGER
+                    max_depth=10,
+                    learning_rate=0.02,
+                    subsample=0.9,
+                    min_samples_split=2,
                     min_samples_leaf=1,
-                    max_features='sqrt',
+                    max_features='log2',
+                    validation_fraction=0.1,
+                    n_iter_no_change=50,
                     random_state=42
                 )
                 gb_model.fit(X_train, y_train)
                 models['gradient_boosting'] = gb_model
                 predictions['gradient_boosting'] = gb_model.predict(X_test)
                 
-                # Model 5: Neural Network (DEEP learning)
-                print(f"      Training Deep Neural Network (1000 epochs)...")
+                # Model 5: Neural Network (VERY DEEP learning)
+                print(f"      Training Deep Neural Network (2000 epochs - LONGEST!)...")
                 nn_model = MLPRegressor(
-                    hidden_layer_sizes=(512, 256, 128, 64, 32),  # DEEPER network
+                    hidden_layer_sizes=(1024, 512, 256, 128, 64, 32),  # MUCH DEEPER network
                     activation='relu',
                     solver='adam',
-                    alpha=0.0005,
-                    batch_size=16,
+                    alpha=0.0001,
+                    batch_size=8,
                     learning_rate='adaptive',
-                    learning_rate_init=0.0005,
-                    max_iter=1000,  # TRAIN MUCH LONGER
+                    learning_rate_init=0.0003,
+                    max_iter=2000,  # TRAIN LONGEST
                     early_stopping=True,
-                    validation_fraction=0.15,
-                    n_iter_no_change=20,
-                    random_state=42
+                    validation_fraction=0.2,
+                    n_iter_no_change=30,
+                    random_state=42,
+                    momentum=0.95
                 )
                 nn_model.fit(X_train_scaled, y_train)
                 models['neural_network'] = nn_model
@@ -485,6 +562,25 @@ class AdvancedParlayPredictor:
                 # Use CV RMSE for more conservative uncertainty
                 final_rmse = max(ensemble_rmse, cv_mean_rmse)
                 
+                # FEATURE IMPORTANCE ANALYSIS for interpretability
+                print(f"      Analyzing feature importance...")
+                feature_importance = {}
+                
+                # Get importance from tree models
+                if 'xgboost' in models:
+                    xgb_importance = models['xgboost'].feature_importances_
+                    for i, feat in enumerate(available_features):
+                        feature_importance[feat] = feature_importance.get(feat, 0) + xgb_importance[i] * weights['xgboost']
+                
+                if 'lightgbm' in models:
+                    lgb_importance = models['lightgbm'].feature_importances_
+                    for i, feat in enumerate(available_features):
+                        feature_importance[feat] = feature_importance.get(feat, 0) + lgb_importance[i] * weights['lightgbm']
+                
+                # Sort by importance
+                top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:5]
+                print(f"      Top 5 features: {', '.join([f[0] for f in top_features])}")
+                
                 # Store ensemble model
                 self.prop_models[prop_name] = {
                     'models': models,
@@ -494,7 +590,8 @@ class AdvancedParlayPredictor:
                     'rmse': final_rmse,
                     'individual_rmses': model_rmses,
                     'cv_rmse': cv_mean_rmse,
-                    'cv_std': cv_std_rmse
+                    'cv_std': cv_std_rmse,
+                    'feature_importance': dict(top_features)
                 }
     
     def predict_player_props(self, player_stats, prop_lines):
