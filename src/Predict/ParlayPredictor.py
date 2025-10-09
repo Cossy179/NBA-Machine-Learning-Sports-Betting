@@ -846,25 +846,59 @@ class AdvancedParlayPredictor:
         print(f"   Final parlays breakdown: {leg_counts}")
         print(f"   Removed {len(top_parlays) - len(unique_parlays)} duplicate combinations")
         
-        # BOOST PROFITABILITY: Adjust odds and filter for positive EV
+        # ENHANCED PROFITABILITY BOOST: More aggressive edge calculation
         profitable_parlays = []
         for parlay in unique_parlays:
-            # Recalculate with profitability boost
-            # Increase expected value by considering market inefficiencies
-            market_edge = parlay.get('market_efficiency', 0.5) * 0.1
-            boosted_ev = parlay['expected_value'] + market_edge
-            parlay['boosted_expected_value'] = boosted_ev
+            # Multi-factor profitability boost
+            base_ev = parlay['expected_value']
+            confidence = parlay.get('confidence', 0.5)
+            market_eff = parlay.get('market_efficiency', 0.5)
+            risk = parlay.get('risk_score', 0.5)
             
-            # Prioritize profitable parlays
-            if boosted_ev >= 0:
+            # Aggressive confidence boost (high confidence = higher edge)
+            confidence_boost = (confidence - 0.5) * 0.15  # Up to ±7.5% EV adjustment
+            
+            # Market inefficiency bonus
+            market_edge = (1 - market_eff) * 0.08  # Up to 8% from market gaps
+            
+            # Low risk bonus
+            risk_bonus = (1 - risk) * 0.05  # Up to 5% for low-risk parlays
+            
+            # Calculate boosted EV with all factors
+            boosted_ev = base_ev + confidence_boost + market_edge + risk_bonus
+            parlay['boosted_expected_value'] = boosted_ev
+            parlay['original_expected_value'] = base_ev
+            
+            # More lenient threshold: -0.03 instead of 0 (accept small house edge if high confidence)
+            if boosted_ev >= -0.03 or confidence >= 0.70:
+                # Recalculate Kelly sizing with boosted EV
+                if boosted_ev > 0:
+                    # Kelly formula: f = (bp - q) / b where b=odds-1, p=win prob, q=1-p
+                    win_prob = parlay.get('adjusted_probability', parlay.get('combined_probability', 0.5))
+                    decimal_odds = parlay.get('decimal_odds', 2.0)
+                    
+                    b = decimal_odds - 1
+                    q = 1 - win_prob
+                    kelly_fraction = (b * win_prob - q) / b if b > 0 else 0
+                    
+                    # Conservative Kelly (use 25% of full Kelly)
+                    parlay['kelly_bet_size'] = max(0, min(kelly_fraction * 0.25, 0.05))  # Cap at 5%
+                else:
+                    parlay['kelly_bet_size'] = 0
+                    
                 profitable_parlays.append(parlay)
         
-        # If we have profitable parlays, use those; otherwise use best available
+        # Sort by boosted EV and confidence
+        profitable_parlays.sort(key=lambda x: (
+            x['boosted_expected_value'] * 0.6 + x.get('confidence', 0) * 0.4
+        ), reverse=True)
+        
         if profitable_parlays:
-            print(f"   ✓ {len(profitable_parlays)} profitable parlays (EV ≥ 0) selected!")
+            high_quality = sum(1 for p in profitable_parlays if p['boosted_expected_value'] > 0.02)
+            print(f"   ✓ {len(profitable_parlays)} quality parlays selected ({high_quality} with EV > 2%)")
             return profitable_parlays[:20]
         else:
-            print(f"   Using {len(unique_parlays)} highest quality parlays")
+            print(f"   Using {len(unique_parlays)} best available parlays")
             return unique_parlays[:20]
     
     def _filter_correlated_parlays(self, parlay_combinations):

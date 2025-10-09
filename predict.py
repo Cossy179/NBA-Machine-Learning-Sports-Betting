@@ -382,6 +382,82 @@ def calculate_kelly_bet(probability, odds, bankroll=1000, max_bet_pct=0.05):
         return {'kelly_fraction': 0, 'bet_amount': 0, 'expected_value': 0}
 
 
+def calculate_scaled_kelly_bets(predictions, parlays, bankroll, use_parlays=False):
+    """Use Kelly Criterion proportions but scale to 100% bankroll allocation"""
+    bets_to_allocate = []
+    
+    # Step 1: Calculate Kelly fractions for all bets
+    for pred in predictions:
+        if 'BET' in pred['recommendation']:
+            # Determine which side to bet and get its Kelly
+            if pred['home_probability'] > pred['away_probability']:
+                kelly_frac = pred['kelly_home']['kelly_fraction']
+                bets_to_allocate.append({
+                    'type': 'game',
+                    'team': pred['home_team'],
+                    'side': 'home',
+                    'confidence': pred['confidence'],
+                    'kelly_fraction': kelly_frac,
+                    'prediction': pred
+                })
+            else:
+                kelly_frac = pred['kelly_away']['kelly_fraction']
+                bets_to_allocate.append({
+                    'type': 'game',
+                    'team': pred['away_team'],
+                    'side': 'away',
+                    'confidence': pred['confidence'],
+                    'kelly_fraction': kelly_frac,
+                    'prediction': pred
+                })
+    
+    # Add high-quality parlays if enabled
+    if use_parlays and parlays:
+        for i, parlay in enumerate(parlays[:3], 1):
+            boosted_ev = parlay.get('boosted_expected_value', parlay.get('expected_value', 0))
+            confidence = parlay.get('confidence', 0)
+            kelly_size = parlay.get('kelly_bet_size', 0)
+            
+            if boosted_ev > 0 or confidence > 0.70:
+                bets_to_allocate.append({
+                    'type': 'parlay',
+                    'parlay_num': i,
+                    'legs': len(parlay['legs']),
+                    'confidence': confidence,
+                    'kelly_fraction': kelly_size,
+                    'parlay': parlay
+                })
+    
+    if len(bets_to_allocate) == 0:
+        return [], 0
+    
+    # Step 2: Sum all Kelly fractions
+    total_kelly_fraction = sum(bet['kelly_fraction'] for bet in bets_to_allocate)
+    
+    # Step 3: Scale to use 100% of bankroll
+    # If total Kelly is 20%, we scale by 5x to reach 100%
+    if total_kelly_fraction > 0:
+        scale_factor = 1.0 / total_kelly_fraction
+    else:
+        # Fallback to even split if no Kelly fractions
+        scale_factor = len(bets_to_allocate)
+    
+    # Step 4: Apply scaled Kelly to each bet
+    allocated_bets = []
+    for bet in bets_to_allocate:
+        # Scaled amount = (Kelly fraction × scale factor) × bankroll
+        scaled_fraction = bet['kelly_fraction'] * scale_factor
+        bet['amount'] = scaled_fraction * bankroll
+        bet['percentage'] = scaled_fraction * 100
+        bet['original_kelly_pct'] = bet['kelly_fraction'] * 100
+        bet['scale_factor'] = scale_factor
+        allocated_bets.append(bet)
+    
+    total_allocated = sum(bet['amount'] for bet in allocated_bets)
+    
+    return allocated_bets, total_allocated
+
+
 def check_player_availability(game_info):
     """Check which players are available (not injured) using free sources"""
     available_players = {}
@@ -858,13 +934,27 @@ def display_parlays(parlays):
     
     for i, parlay in enumerate(parlays[:5], 1):  # Show top 5
         print(f"\n🎯 PARLAY {i}:")
-        print(f"💰 Expected Value: {parlay.get('expected_value', 0):+.3f}")
+        
+        # Show both original and boosted EV
+        original_ev = parlay.get('original_expected_value', parlay.get('expected_value', 0))
+        boosted_ev = parlay.get('boosted_expected_value', original_ev)
+        
+        if abs(boosted_ev - original_ev) > 0.001:
+            print(f"💰 Expected Value: {original_ev:+.3f} → {boosted_ev:+.3f} (boosted)")
+        else:
+            print(f"💰 Expected Value: {boosted_ev:+.3f}")
+            
         print(f"🎲 American Odds: {parlay.get('american_odds', 0):+.0f}")
         print(f"📊 Win Probability: {parlay.get('adjusted_probability', parlay.get('combined_probability', 0)):.1%}")
         print(f"🎯 Confidence: {parlay.get('confidence', 0):.1%}")
         print(f"⚠️ Risk Score: {parlay.get('risk_score', 0):.2f}")
         print(f"💎 Advanced Score: {parlay.get('advanced_score', 0):.1f}")
-        print(f"💸 Kelly Bet Size: {parlay.get('kelly_bet_size', 0):.1%} of bankroll")
+        
+        kelly_size = parlay.get('kelly_bet_size', 0)
+        if kelly_size > 0:
+            print(f"💸 Kelly Bet Size: {kelly_size:.1%} of bankroll ✅")
+        else:
+            print(f"💸 Kelly Bet Size: 0.0% (MONITOR ONLY - No edge detected) ⚠️")
         
         print("🏀 Legs:")
         for j, leg in enumerate(parlay.get('legs', []), 1):
@@ -882,12 +972,34 @@ def main():
     parser.add_argument('--parlays', action='store_true', help='Generate parlay recommendations')
     parser.add_argument('--real-time', action='store_true', help='Use real-time data')
     parser.add_argument('--confidence', type=float, default=0.25, help='Minimum confidence for bets (default: 0.25)')
-    parser.add_argument('--bankroll', type=float, default=1000, help='Bankroll for Kelly sizing')
+    parser.add_argument('--bankroll', type=float, default=1000, help='Total bankroll amount (default: $1000)')
+    parser.add_argument('--kc', '--kelly', action='store_true', dest='kelly_criterion',
+                       help='Use Kelly Criterion for bet sizing (conservative). Without this flag, bankroll is split evenly across all recommended bets.')
     parser.add_argument('--no-details', action='store_true', help='Hide detailed analysis')
     
     args = parser.parse_args()
     
     print_header()
+    
+    # Display bet sizing mode
+    print("\n⚙️  BET SIZING CONFIGURATION")
+    print("="*70)
+    if args.kelly_criterion:
+        print("📊 Mode: Kelly Criterion (Conservative)")
+        print("   • Mathematically optimal bet sizing")
+        print("   • Typically uses 15-35% of bankroll")
+        print("   • Reduces variance and drawdowns")
+        print("   • Recommended for long-term bankroll growth")
+        print("   • Capital preservation priority")
+    else:
+        print("💪 Mode: Scaled Kelly (Aggressive - 100% Allocation)")
+        print("   • Uses Kelly Criterion proportions (confidence-based sizing)")
+        print("   • Scaled to deploy 100% of bankroll")
+        print("   • Higher confidence bets get larger allocations")
+        print("   • Uses all capital while respecting relative edges")
+        print("   • ⚠️  Full bankroll at risk - use with caution!")
+    print(f"💰 Bankroll: ${args.bankroll:,.2f}")
+    print("="*70 + "\n")
     
     # Load prediction system
     predictor = load_prediction_system()
@@ -960,43 +1072,112 @@ def main():
         print(f"Average Confidence: {avg_confidence:.1%}")
         print(f"Recommended Bets: {recommended_bets}")
         
-        if recommended_bets > 0:
-            total_kelly = sum([
-                max(p['kelly_home']['bet_amount'], p['kelly_away']['bet_amount'])
-                for p in predictions
-            ])
-            print(f"Total Kelly Bet Amount: ${total_kelly:.2f}")
-            print(f"Bankroll Utilization: {total_kelly/args.bankroll:.1%}")
-            print(f"Remaining Bankroll: ${max(0, args.bankroll - total_kelly):.2f}")
+        # Determine allocation mode
+        if args.kelly_criterion:
+            # KELLY CRITERION MODE (Conservative, optimal bet sizing)
+            print(f"\n💰 BET SIZING MODE: Kelly Criterion (Conservative)")
+            print("-" * 70)
             
-            # Display bankroll allocation breakdown
-            print(f"\n💰 BANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
-            print("="*70)
-            
-            bet_num = 1
-            for pred in predictions:
-                if pred['kelly_home']['bet_amount'] > 0:
-                    pct = (pred['kelly_home']['bet_amount'] / args.bankroll) * 100
-                    print(f"  {bet_num}. {pred['home_team']} ML: ${pred['kelly_home']['bet_amount']:.2f} ({pct:.1f}%)")
-                    bet_num += 1
-                if pred['kelly_away']['bet_amount'] > 0:
-                    pct = (pred['kelly_away']['bet_amount'] / args.bankroll) * 100
-                    print(f"  {bet_num}. {pred['away_team']} ML: ${pred['kelly_away']['bet_amount']:.2f} ({pct:.1f}%)")
-                    bet_num += 1
-            
-            # Add top parlays to allocation if they have Kelly sizing
-            if args.parlays and parlays:
-                print(f"\n  💎 Top Parlays:")
-                for i, parlay in enumerate(parlays[:3], 1):
-                    if parlay['kelly_bet_size'] > 0:
-                        amount = args.bankroll * parlay['kelly_bet_size']
-                        pct = parlay['kelly_bet_size'] * 100
-                        print(f"  {bet_num}. Parlay #{i} ({len(parlay['legs'])} legs): ${amount:.2f} ({pct:.1f}%)")
+            if recommended_bets > 0:
+                total_kelly = sum([
+                    max(p['kelly_home']['bet_amount'], p['kelly_away']['bet_amount'])
+                    for p in predictions
+                ])
+                print(f"Total Kelly Bet Amount: ${total_kelly:.2f}")
+                print(f"Bankroll Utilization: {total_kelly/args.bankroll:.1%}")
+                print(f"Remaining Bankroll: ${max(0, args.bankroll - total_kelly):.2f}")
+                
+                # Display bankroll allocation breakdown
+                print(f"\n💰 BANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
+                print("="*70)
+                
+                bet_num = 1
+                total_kelly = 0
+                
+                for pred in predictions:
+                    if pred['kelly_home']['bet_amount'] > 0:
+                        amount = pred['kelly_home']['bet_amount']
+                        pct = (amount / args.bankroll) * 100
+                        print(f"  {bet_num}. {pred['home_team']} ML: ${amount:.2f} ({pct:.1f}%)")
                         bet_num += 1
-            
-            print(f"\n  {'='*66}")
-            print(f"  TOTAL ALLOCATED: ${total_kelly:.2f} ({total_kelly/args.bankroll:.1%})")
-            print(f"  REMAINING: ${max(0, args.bankroll - total_kelly):.2f}")
+                        total_kelly += amount
+                    if pred['kelly_away']['bet_amount'] > 0:
+                        amount = pred['kelly_away']['bet_amount']
+                        pct = (amount / args.bankroll) * 100
+                        print(f"  {bet_num}. {pred['away_team']} ML: ${amount:.2f} ({pct:.1f}%)")
+                        bet_num += 1
+                        total_kelly += amount
+                
+                # Add top parlays to allocation (show all high-quality parlays)
+                if args.parlays and parlays:
+                    print(f"\n  💎 Top Parlays:")
+                    parlay_count = 0
+                    for i, parlay in enumerate(parlays[:5], 1):
+                        # Show parlays with positive boosted EV or high confidence
+                        boosted_ev = parlay.get('boosted_expected_value', parlay.get('expected_value', 0))
+                        confidence = parlay.get('confidence', 0)
+                        
+                        if parlay['kelly_bet_size'] > 0:
+                            amount = args.bankroll * parlay['kelly_bet_size']
+                            pct = parlay['kelly_bet_size'] * 100
+                            print(f"  {bet_num}. Parlay #{i} ({len(parlay['legs'])} legs): ${amount:.2f} ({pct:.1f}%) ✅")
+                            bet_num += 1
+                            parlay_count += 1
+                            total_kelly += amount
+                        elif boosted_ev > -0.02 and confidence > 0.65:
+                            # Show high-confidence parlays even with 0% Kelly (monitor bets)
+                            print(f"  {bet_num}. Parlay #{i} ({len(parlay['legs'])} legs): $0.00 (0.0%) ⚠️ MONITOR ONLY")
+                            bet_num += 1
+                            parlay_count += 1
+                    
+                    if parlay_count == 0:
+                        print(f"  ⚠️ No parlays meet Kelly criteria (all 0% sizing)")
+                
+                print(f"\n  {'='*66}")
+                print(f"  TOTAL ALLOCATED: ${total_kelly:.2f} ({total_kelly/args.bankroll:.1%})")
+                print(f"  REMAINING: ${max(0, args.bankroll - total_kelly):.2f}")
+        else:
+            # SCALED KELLY MODE (uses Kelly proportions, scaled to 100%)
+            if recommended_bets > 0:
+                parlays_to_include = parlays if args.parlays else []
+                allocated_bets, total_allocated = calculate_scaled_kelly_bets(
+                    predictions, parlays_to_include, args.bankroll, use_parlays=args.parlays
+                )
+                
+                # Display bankroll allocation breakdown
+                print(f"\n💰 BANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
+                print("="*70)
+                
+                bet_num = 1
+                for bet in allocated_bets:
+                    if bet['type'] == 'game':
+                        team = bet['team']
+                        amount = bet['amount']
+                        pct = bet['percentage']
+                        original_kelly = bet['original_kelly_pct']
+                        
+                        # Show original Kelly → scaled percentage
+                        print(f"  {bet_num}. {team} ML: ${amount:.2f} ({pct:.1f}%) [Kelly: {original_kelly:.1f}% → {pct:.1f}%]")
+                        bet_num += 1
+                    elif bet['type'] == 'parlay':
+                        parlay_num = bet['parlay_num']
+                        legs = bet['legs']
+                        amount = bet['amount']
+                        pct = bet['percentage']
+                        original_kelly = bet['original_kelly_pct']
+                        
+                        print(f"  {bet_num}. Parlay #{parlay_num} ({legs} legs): ${amount:.2f} ({pct:.1f}%) [Kelly: {original_kelly:.1f}% → {pct:.1f}%]")
+                        bet_num += 1
+                
+                # Show parlays section if enabled
+                if args.parlays and parlays:
+                    parlay_in_allocation = sum(1 for b in allocated_bets if b['type'] == 'parlay')
+                    if parlay_in_allocation > 0:
+                        print(f"\n  💎 Parlays Included: {parlay_in_allocation} (confidence-weighted)")
+                
+                print(f"\n  {'='*66}")
+                print(f"  TOTAL ALLOCATED: ${total_allocated:.2f} (100.0%)")
+                print(f"  REMAINING: $0.00")
     
     else:
         print("❌ No predictions could be generated")

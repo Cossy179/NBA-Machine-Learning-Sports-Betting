@@ -148,23 +148,32 @@ def load_historical_data(start_date="2023-01-01", end_date="2024-06-30"):
     try:
         con = sqlite3.connect("Data/dataset.sqlite")
         
-        # Try enhanced dataset first
+        # Try ultra-enhanced, then enhanced, then base dataset
         cursor = con.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", ("dataset_2012-24_enhanced",))
-        if cursor.fetchone():
-            dataset_name = "dataset_2012-24_enhanced"
-            print("✅ Using enhanced dataset")
-        else:
-            dataset_name = "dataset_2012-24_new"
-            print("⚠️ Using base dataset (enhanced features not available)")
+        dataset_name = None
         
-        # Query to get UNIQUE games only (remove duplicates)
+        for dataset in ["dataset_2012-24_ultra_enhanced", "dataset_2012-24_enhanced", "dataset_2012-24_new"]:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (dataset,))
+            if cursor.fetchone():
+                dataset_name = dataset
+                if "ultra" in dataset:
+                    print(f"✅ Using {dataset} with 270+ ultra-advanced features")
+                elif "enhanced" in dataset:
+                    print(f"✅ Using {dataset} with enhanced features")
+                else:
+                    print(f"⚠️ Using {dataset} (base features only)")
+                break
+        
+        if not dataset_name:
+            print("❌ No dataset found")
+            con.close()
+            return None
+        
+        # Query to get ALL columns (we need all features for advanced models)
         query = f'''
-        SELECT DISTINCT 
-            Date, TEAM_NAME, "TEAM_NAME.1" as AWAY_TEAM, Score, "Home-Team-Win", OU, "OU-Cover"
+        SELECT *
         FROM "{dataset_name}"
         WHERE Date >= ? AND Date <= ?
-        ORDER BY Date
         '''
         
         df = pd.read_sql_query(query, con, params=[start_date, end_date])
@@ -253,24 +262,319 @@ def load_available_models():
     except Exception as e:
         print(f"⚠️ Advanced Parlay Predictor failed: {e}")
     
-    # Load specific models
+    # Load Super Advanced XGBoost (NEW!)
+    try:
+        sys.path.append('src/Train-Models')
+        
+        # Check if Super Advanced models exist
+        super_model_files = [
+            "Models/XGBoost_Models/SuperAdvanced_XGB_v1_xgb_dart.json",
+            "Models/XGBoost_Models/SuperAdvanced_XGB_v1_lightgbm.txt",
+            "Models/XGBoost_Models/SuperAdvanced_XGB_v1_catboost.cbm"
+        ]
+        
+        if any(os.path.exists(f) for f in super_model_files):
+            from SuperAdvanced_XGBoost import SuperAdvancedXGBoostTrainer
+            
+            models['super_advanced_xgb'] = {
+                'trainer_class': SuperAdvancedXGBoostTrainer,
+                'name': 'Super Advanced XGBoost Ensemble',
+                'type': 'super_advanced',
+                'model_prefix': 'SuperAdvanced_XGB_v1'
+            }
+            print(f"✅ Super Advanced XGBoost Ensemble found")
+    
+    except Exception as e:
+        print(f"⚠️ Super Advanced XGBoost loading failed: {e}")
+    
+    # Load specific individual models
     model_files = [
-        ("Original XGBoost", "Models/XGBoost_Models/XGBoost_68.7%_ML-4.json"),
-        ("Advanced XGBoost", "Models/XGBoost_Models/XGB_ML_Advanced_v1.json"),
-        ("Multi-Target", "Models/XGBoost_Models/MultiTarget_NBA_v1_win_loss.json")
+        ("Original XGBoost", "Models/XGBoost_Models/XGBoost_68.7%_ML-4.json", "original_xgb"),
+        ("Advanced XGBoost", "Models/XGBoost_Models/XGB_ML_Advanced_v1.json", "advanced_xgb"),
+        ("Multi-Target", "Models/XGBoost_Models/MultiTarget_NBA_v1_win_loss.json", "multi_target"),
+        ("XGBoost DART", "Models/XGBoost_Models/SuperAdvanced_XGB_v1_xgb_dart.json", "xgb_dart"),
+        ("LightGBM", "Models/XGBoost_Models/SuperAdvanced_XGB_v1_lightgbm.txt", "lightgbm"),
     ]
     
-    for model_name, model_path in model_files:
+    for model_name, model_path, model_key in model_files:
         if os.path.exists(model_path):
-            models[model_name.lower().replace(' ', '_')] = {
+            models[model_key] = {
                 'path': model_path,
                 'name': model_name,
-                'type': 'xgboost'
+                'type': 'xgboost' if 'xgb' in model_key.lower() else 'lightgbm' if 'lgb' in model_key.lower() else 'xgboost'
             }
             print(f"✅ Found {model_name}")
     
-    print(f"📊 Total models available: {len(models)}")
+    # Load Ensemble models with proper selector
+    try:
+        ensemble_files = [
+            ("Ensemble v1", "Models/Ensemble_Models/Ensemble_NBA_v1_meta_model.pkl", "ensemble_v1"),
+            ("Ensemble v2", "Models/Ensemble_Models/Ensemble_NBA_v2_meta_model.pkl", "ensemble_v2")
+        ]
+        
+        # Need AutoModelSelector for ensemble models
+        from AutoModelSelector import AutoModelSelector
+        selector = AutoModelSelector()
+        
+        for model_name, model_path, model_key in ensemble_files:
+            if os.path.exists(model_path):
+                models[model_key] = {
+                    'path': model_path,
+                    'name': model_name,
+                    'type': 'ensemble',
+                    'selector': selector  # Add selector for ensemble prediction
+                }
+                print(f"✅ Found {model_name}")
+    except Exception as e:
+        print(f"⚠️ Ensemble model loading failed: {e}")
+    
+    print(f"\n📊 Total models available for backtesting: {len(models)}")
     return models
+
+def backtest_all_models_comparison(models, df, bet_size=100, confidence_threshold=0.55):
+    """Backtest all available models and create comprehensive comparison"""
+    print("\n" + "="*70)
+    print("🏆 COMPREHENSIVE MODEL COMPARISON")
+    print("="*70)
+    print(f"Testing {len(models)} models on {len(df)} games")
+    print(f"Bet size: ${bet_size} per bet | Confidence threshold: {confidence_threshold:.0%}")
+    print("="*70 + "\n")
+    
+    results = {}
+    
+    for model_key, model_info in models.items():
+        print(f"\n{'='*70}")
+        result = backtest_model(model_info, df, bet_size, confidence_threshold)
+        
+        if result and 'roi' in result:
+            results[model_key] = {
+                'name': model_info.get('name', model_key),
+                'accuracy': result.get('accuracy', 0),
+                'roi': result.get('roi', 0),
+                'total_profit': result.get('total_profit', 0),
+                'win_rate': result.get('win_rate', 0),
+                'total_bets': result.get('total_bets', 0),
+                'wins': result.get('wins', 0),
+                'losses': result.get('losses', 0),
+                'avg_confidence': result.get('avg_confidence', 0),
+                'sharpe_ratio': result.get('sharpe_ratio', 0),
+                'max_drawdown': result.get('max_drawdown', 0)
+            }
+            print(f"✅ {model_info.get('name')}: {result['accuracy']:.1%} accuracy, {result['roi']:.1f}% ROI")
+        else:
+            print(f"⚠️ {model_info.get('name')}: Failed to backtest")
+    
+    # Create comparison summary
+    if results:
+        print("\n" + "="*70)
+        print("📊 FINAL MODEL COMPARISON")
+        print("="*70)
+        
+        # Sort by ROI
+        sorted_results = sorted(results.items(), key=lambda x: x[1]['roi'], reverse=True)
+        
+        print(f"\n{'Rank':<6} {'Model':<35} {'Accuracy':<12} {'ROI':<10} {'Profit':<12} {'Bets':<8}")
+        print("-" * 90)
+        
+        for rank, (model_key, result) in enumerate(sorted_results, 1):
+            medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "  "
+            print(f"{medal} #{rank:<4} {result['name']:<35} {result['accuracy']:>10.1%}  {result['roi']:>8.1f}%  ${result['total_profit']:>9.2f}  {result['total_bets']:>6}")
+        
+        # Best model summary
+        best_model_key, best_result = sorted_results[0]
+        print("\n" + "="*70)
+        print(f"🏆 BEST MODEL: {best_result['name']}")
+        print("="*70)
+        print(f"✅ Accuracy: {best_result['accuracy']:.2%}")
+        print(f"💰 ROI: {best_result['roi']:.2f}%")
+        print(f"💵 Total Profit: ${best_result['total_profit']:.2f}")
+        print(f"🎯 Win Rate: {best_result['win_rate']:.2%}")
+        print(f"📊 Total Bets: {best_result['total_bets']} ({best_result['wins']}W-{best_result['losses']}L)")
+        print(f"📈 Sharpe Ratio: {best_result.get('sharpe_ratio', 0):.3f}")
+        print(f"📉 Max Drawdown: ${best_result.get('max_drawdown', 0):.2f}")
+        
+        # Create visualization
+        create_model_comparison_chart(results, bet_size)
+        
+        return results
+    else:
+        print("\n❌ No models successfully backtested")
+        return None
+
+def create_model_comparison_chart(results, bet_size):
+    """Create visual comparison of all models"""
+    try:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        # Prepare data
+        model_names = [r['name'][:25] for r in results.values()]  # Truncate long names
+        accuracies = [r['accuracy'] * 100 for r in results.values()]
+        rois = [r['roi'] for r in results.values()]
+        profits = [r['total_profit'] for r in results.values()]
+        
+        # Create figure with subplots
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        fig.suptitle('🏆 NBA Model Comparison - Backtest Results', fontsize=16, fontweight='bold')
+        
+        # 1. Accuracy comparison
+        ax1 = axes[0, 0]
+        colors = ['#2ecc71' if acc > 70 else '#f39c12' if acc > 65 else '#e74c3c' for acc in accuracies]
+        bars1 = ax1.barh(model_names, accuracies, color=colors, alpha=0.8)
+        ax1.set_xlabel('Accuracy (%)', fontweight='bold')
+        ax1.set_title('Model Accuracy Comparison', fontweight='bold')
+        ax1.axvline(x=70, color='red', linestyle='--', label='70% Target')
+        ax1.legend()
+        for i, (bar, acc) in enumerate(zip(bars1, accuracies)):
+            ax1.text(acc + 0.5, i, f'{acc:.1f}%', va='center', fontweight='bold')
+        
+        # 2. ROI comparison
+        ax2 = axes[0, 1]
+        colors2 = ['#2ecc71' if roi > 0 else '#e74c3c' for roi in rois]
+        bars2 = ax2.barh(model_names, rois, color=colors2, alpha=0.8)
+        ax2.set_xlabel('ROI (%)', fontweight='bold')
+        ax2.set_title('Return on Investment Comparison', fontweight='bold')
+        ax2.axvline(x=0, color='black', linestyle='-', linewidth=2)
+        for i, (bar, roi) in enumerate(zip(bars2, rois)):
+            ax2.text(roi + 0.5 if roi > 0 else roi - 2, i, f'{roi:+.1f}%', va='center', fontweight='bold')
+        
+        # 3. Total profit comparison
+        ax3 = axes[1, 0]
+        colors3 = ['#2ecc71' if p > 0 else '#e74c3c' for p in profits]
+        bars3 = ax3.barh(model_names, profits, color=colors3, alpha=0.8)
+        ax3.set_xlabel('Total Profit ($)', fontweight='bold')
+        ax3.set_title('Total Profit Comparison', fontweight='bold')
+        ax3.axvline(x=0, color='black', linestyle='-', linewidth=2)
+        for i, (bar, profit) in enumerate(zip(bars3, profits)):
+            ax3.text(profit + 10 if profit > 0 else profit - 50, i, f'${profit:.0f}', va='center', fontweight='bold')
+        
+        # 4. Summary metrics table
+        ax4 = axes[1, 1]
+        ax4.axis('off')
+        
+        # Create summary table
+        summary_data = []
+        for model_name, result in sorted(results.items(), key=lambda x: x[1]['roi'], reverse=True)[:5]:
+            summary_data.append([
+                result['name'][:20],
+                f"{result['accuracy']:.1%}",
+                f"{result['roi']:+.1f}%",
+                f"${result['total_profit']:.0f}",
+                f"{result['total_bets']}"
+            ])
+        
+        table = ax4.table(cellText=summary_data,
+                         colLabels=['Model', 'Accuracy', 'ROI', 'Profit', 'Bets'],
+                         cellLoc='center',
+                         loc='center',
+                         bbox=[0, 0.3, 1, 0.6])
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 2)
+        
+        # Style table
+        for i in range(len(summary_data) + 1):
+            for j in range(5):
+                cell = table[(i, j)]
+                if i == 0:
+                    cell.set_facecolor('#3498db')
+                    cell.set_text_props(weight='bold', color='white')
+                else:
+                    cell.set_facecolor('#ecf0f1' if i % 2 == 0 else 'white')
+        
+        ax4.text(0.5, 0.15, f'Bet Size: ${bet_size} per bet', 
+                ha='center', fontsize=10, fontweight='bold')
+        
+        # Get total games from first result
+        total_games = 0
+        if results:
+            first_result = list(results.values())[0]
+            total_games = first_result.get('total_bets', 0)
+        
+        ax4.text(0.5, 0.05, f'Total Games Analyzed: {total_games}',
+                ha='center', fontsize=10)
+        
+        plt.tight_layout()
+        
+        # Save chart
+        os.makedirs("Backtest_Results", exist_ok=True)
+        chart_filename = f"Backtest_Results/model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        plt.savefig(chart_filename, dpi=300, bbox_inches='tight')
+        print(f"\n📊 Comparison chart saved: {chart_filename}")
+        
+        plt.close()
+        
+    except Exception as e:
+        print(f"⚠️ Chart creation failed: {e}")
+
+def create_comparison_excel_report(results, args):
+    """Create Excel report comparing all models"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        os.makedirs("Backtest_Results", exist_ok=True)
+        filename = f"Backtest_Results/model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        # Prepare comparison data
+        comparison_data = []
+        for model_key, result in sorted(results.items(), key=lambda x: x[1]['roi'], reverse=True):
+            comparison_data.append({
+                'Rank': len(comparison_data) + 1,
+                'Model': result['name'],
+                'Accuracy': f"{result['accuracy']:.2%}",
+                'Win Rate': f"{result['win_rate']:.2%}",
+                'Total Bets': result['total_bets'],
+                'Wins': result['wins'],
+                'Losses': result['losses'],
+                'ROI': f"{result['roi']:.2f}%",
+                'Total Profit': f"${result['total_profit']:.2f}",
+                'Avg Confidence': f"{result['avg_confidence']:.2%}",
+                'Sharpe Ratio': f"{result.get('sharpe_ratio', 0):.3f}",
+                'Max Drawdown': f"${result.get('max_drawdown', 0):.2f}"
+            })
+        
+        df = pd.DataFrame(comparison_data)
+        
+        # Create Excel with formatting
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Model Comparison', index=False)
+            
+            ws = writer.sheets['Model Comparison']
+            
+            # Header formatting
+            for cell in ws[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="3498DB", end_color="3498DB", fill_type="solid")
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Highlight top 3
+            for row in range(2, min(5, len(comparison_data) + 2)):
+                for col in range(1, 13):
+                    cell = ws.cell(row=row, column=col)
+                    if row == 2:  # 1st place
+                        cell.fill = PatternFill(start_color="FFD700", end_color="FFD700", fill_type="solid")
+                    elif row == 3:  # 2nd place
+                        cell.fill = PatternFill(start_color="C0C0C0", end_color="C0C0C0", fill_type="solid")
+                    elif row == 4:  # 3rd place
+                        cell.fill = PatternFill(start_color="CD7F32", end_color="CD7F32", fill_type="solid")
+            
+            # Auto-size columns
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                ws.column_dimensions[column_letter].width = min(max_length + 2, 40)
+        
+        print(f"📊 Comparison Excel saved: {filename}")
+        
+    except Exception as e:
+        print(f"⚠️ Excel creation failed: {e}")
 
 def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
     """Backtest a single model with detailed statistics and verbose output"""
@@ -279,7 +583,7 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
     
     try:
         # Prepare features - exclude string columns and target variables
-        exclude_cols = ["Score", "Home-Team-Win", "TEAM_NAME", "Date", "AWAY_TEAM", "Date.1", "OU", "OU-Cover", "index"]
+        exclude_cols = ["Score", "Home-Team-Win", "TEAM_NAME", "Date", "TEAM_NAME.1", "Date.1", "OU", "OU-Cover", "index"]
         
         # Get only numeric columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -375,61 +679,106 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
             
         elif model_info['type'] == 'ensemble':
             print("🔧 Using Ensemble System...")
-            predictions = []
-            uncertainties = []
-            confidences = []
-            
-            for i in range(len(X)):
+            try:
+                # Load ensemble models directly
+                import joblib
+                
+                meta_model = joblib.load(model_info['path'])
+                
+                # Load base models for ensemble
+                ensemble_dir = os.path.dirname(model_info['path'])
+                base_name = os.path.basename(model_info['path']).replace('_meta_model.pkl', '')
+                
+                # Try to load ensemble components
+                xgb_model = None
+                lgb_model = None
+                rf_model = None
+                
                 try:
-                    # Prepare features for ensemble
-                    game_features = X.iloc[i].to_dict()
-                    pred_result = model_info['selector'].predict_with_ensemble(game_features)
-                    if pred_result:
-                        predictions.append(pred_result.get('probability', 0.5))
-                        uncertainties.append(pred_result.get('uncertainty', 0.1))
-                        confidences.append(pred_result.get('confidence', 0.5))
-                    else:
-                        predictions.append(0.5)
-                        uncertainties.append(0.1)
-                        confidences.append(0.5)
-                except Exception as e:
-                    print(f"⚠️ Ensemble prediction error for game {i}: {e}")
-                    predictions.append(0.5)
-                    uncertainties.append(0.1)
-                    confidences.append(0.5)
-            
-            predictions = np.array(predictions)
-            uncertainties = np.array(uncertainties)
-            confidences = np.array(confidences)
+                    import xgboost as xgb
+                    xgb_path = f"{ensemble_dir}/{base_name}_xgboost.pkl"
+                    if os.path.exists(xgb_path):
+                        xgb_model = joblib.load(xgb_path)
+                except:
+                    pass
+                
+                try:
+                    import lightgbm as lgb
+                    lgb_path = f"{ensemble_dir}/{base_name}_lightgbm.pkl"
+                    if os.path.exists(lgb_path):
+                        lgb_model = joblib.load(lgb_path)
+                except:
+                    pass
+                
+                try:
+                    from sklearn.ensemble import RandomForestClassifier
+                    rf_path = f"{ensemble_dir}/{base_name}_random_forest.pkl"
+                    if os.path.exists(rf_path):
+                        rf_model = joblib.load(rf_path)
+                except:
+                    pass
+                
+                # Get predictions from available base models
+                base_preds = []
+                if xgb_model:
+                    try:
+                        base_preds.append(xgb_model.predict_proba(X)[:, 1])
+                    except:
+                        pass
+                if lgb_model:
+                    try:
+                        base_preds.append(lgb_model.predict_proba(X)[:, 1])
+                    except:
+                        pass
+                if rf_model:
+                    try:
+                        base_preds.append(rf_model.predict_proba(X)[:, 1])
+                    except:
+                        pass
+                
+                if base_preds:
+                    # Stack predictions for meta model
+                    X_meta = np.column_stack(base_preds)
+                    predictions = meta_model.predict_proba(X_meta)[:, 1]
+                    uncertainties = np.abs(predictions - 0.5)
+                    confidences = 2 * uncertainties
+                else:
+                    # Fallback: use meta model directly if base models fail
+                    predictions = meta_model.predict_proba(X)[:, 1]
+                    uncertainties = np.abs(predictions - 0.5)
+                    confidences = 2 * uncertainties
+                    
+            except Exception as e:
+                print(f"⚠️ Ensemble loading failed: {e}. Using fallback predictions.")
+                predictions = np.full(len(X), 0.5)
+                uncertainties = np.full(len(X), 0.1)
+                confidences = np.full(len(X), 0.5)
             
         elif model_info['type'] == 'multi_target':
             print("🔧 Using Multi-Target System...")
-            predictions = []
-            uncertainties = []
-            confidences = []
-            
-            for i in range(len(X)):
-                try:
-                    # Prepare features for multi-target
-                    game_features = X.iloc[i].to_dict()
-                    pred_result = model_info['selector'].predict_with_multi_target(game_features)
-                    if pred_result:
-                        predictions.append(pred_result.get('win_probability', 0.5))
-                        uncertainties.append(pred_result.get('uncertainty', 0.1))
-                        confidences.append(pred_result.get('confidence', 0.5))
-                    else:
-                        predictions.append(0.5)
-                        uncertainties.append(0.1)
-                        confidences.append(0.5)
-                except Exception as e:
-                    print(f"⚠️ Multi-target prediction error for game {i}: {e}")
-                    predictions.append(0.5)
-                    uncertainties.append(0.1)
-                    confidences.append(0.5)
-            
-            predictions = np.array(predictions)
-            uncertainties = np.array(uncertainties)
-            confidences = np.array(confidences)
+            try:
+                import xgboost as xgb
+                
+                # Load the multi-target model directly
+                model = xgb.Booster()
+                model.load_model(model_info['path'])
+                
+                # Make predictions
+                dtest = xgb.DMatrix(X)
+                predictions = model.predict(dtest)
+                
+                # If predictions are multi-class, get the positive class
+                if len(predictions.shape) > 1:
+                    predictions = predictions[:, 1] if predictions.shape[1] > 1 else predictions[:, 0]
+                
+                uncertainties = np.abs(predictions - 0.5)
+                confidences = 2 * uncertainties
+                
+            except Exception as e:
+                print(f"⚠️ Multi-target loading failed: {e}. Using fallback.")
+                predictions = np.full(len(X), 0.5)
+                uncertainties = np.full(len(X), 0.1)
+                confidences = np.full(len(X), 0.5)
             
         elif model_info['type'] == 'auto':
             print("🔧 Using Calibrated Weighted Ensemble with per-model feature alignment...")
@@ -531,13 +880,100 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
                 print(f"⚠️ Ensemble inference failed: {e}")
                 predictions = np.random.uniform(0.58, 0.62, len(X))
             
+        elif model_info['type'] == 'lightgbm':
+            print("🔧 Using LightGBM Model...")
+            try:
+                import lightgbm as lgb
+                import joblib
+                
+                # Try to load feature list
+                feature_list_path = model_info['path'].replace('.txt', '_features.pkl').replace('_lightgbm', '')
+                feature_list_path = feature_list_path.replace('.txt', '') + '_features.pkl'
+                
+                # Check multiple possible feature list locations
+                possible_paths = [
+                    model_info['path'].replace('_lightgbm.txt', '_features.pkl'),
+                    model_info['path'].replace('.txt', '_features.pkl'),
+                    os.path.join(os.path.dirname(model_info['path']), 'SuperAdvanced_XGB_v1_features.pkl')
+                ]
+                
+                feature_list = None
+                for fpath in possible_paths:
+                    if os.path.exists(fpath):
+                        try:
+                            feature_list = joblib.load(fpath)
+                            print(f"   ✓ Loaded feature list: {len(feature_list)} features required")
+                            
+                            # Ensure X has all required features
+                            missing_features = [f for f in feature_list if f not in X.columns]
+                            if missing_features:
+                                print(f"   ⚠️ Missing {len(missing_features)} features, filling with zeros")
+                                for feat in missing_features:
+                                    X[feat] = 0
+                            
+                            # Select and order features as model expects
+                            X = X[feature_list].copy()
+                            break
+                            
+                        except Exception as e:
+                            print(f"   ⚠️ Could not load {fpath}: {e}")
+                
+                # Ensure X is numeric and clean for LightGBM
+                X_clean = X.copy()
+                for col in X_clean.columns:
+                    if X_clean[col].dtype == 'object':
+                        X_clean[col] = pd.to_numeric(X_clean[col], errors='coerce')
+                X_clean = X_clean.fillna(0).astype('float32')
+                
+                model = lgb.Booster(model_file=model_info['path'])
+                predictions = model.predict(X_clean)
+                
+                # Ensure predictions are probabilities (0-1 range)
+                if predictions.max() > 1.0 or predictions.min() < 0.0:
+                    predictions = 1 / (1 + np.exp(-predictions))  # Apply sigmoid if needed
+                
+            except Exception as e:
+                print(f"⚠️ LightGBM loading failed: {e}")
+                return None
+        
         elif model_info['type'] == 'xgboost':
             print("🔧 Using XGBoost Model...")
             import xgboost as xgb
+            import joblib
+            
             model = xgb.Booster()
             model.load_model(model_info['path'])
             
-            dtest = xgb.DMatrix(X)
+            # Try to load feature list if model was trained with feature selection
+            feature_list = None
+            feature_list_path = model_info['path'].replace('.json', '_features.pkl')
+            
+            if os.path.exists(feature_list_path):
+                try:
+                    feature_list = joblib.load(feature_list_path)
+                    print(f"   ✓ Loaded feature list: {len(feature_list)} features required")
+                    
+                    # Ensure X has all required features
+                    missing_features = [f for f in feature_list if f not in X.columns]
+                    if missing_features:
+                        print(f"   ⚠️ Missing {len(missing_features)} features, filling with zeros")
+                        for feat in missing_features:
+                            X[feat] = 0
+                    
+                    # Select and order features as model expects
+                    X = X[feature_list].copy()
+                    
+                except Exception as e:
+                    print(f"   ⚠️ Could not load feature list: {e}")
+            
+            # Ensure X is numeric and properly formatted for XGBoost
+            X_clean = X.copy()
+            for col in X_clean.columns:
+                if X_clean[col].dtype == 'object':
+                    X_clean[col] = pd.to_numeric(X_clean[col], errors='coerce')
+            X_clean = X_clean.fillna(0).astype('float32')
+            
+            dtest = xgb.DMatrix(X_clean)
             predictions = model.predict(dtest)
             
             # Handle multi-class output
@@ -665,7 +1101,7 @@ def calculate_verbose_betting_performance(y_true, predictions, df, bet_size, con
         actual = y_true[i]
         game_date = df.iloc[i]['Date']
         home_team = df.iloc[i]['TEAM_NAME']
-        away_team = df.iloc[i]['AWAY_TEAM']
+        away_team = df.iloc[i].get('TEAM_NAME.1', df.iloc[i].get('AWAY_TEAM', 'Away Team'))
         
         # Get uncertainty and confidence if available
         uncertainty = uncertainties[i] if uncertainties is not None else 0.1
@@ -1149,7 +1585,7 @@ def generate_detailed_betting_csvs(results, df):
                 for idx, row in df.iterrows():
                     if (row['Date'] == bet['date'] and 
                         row['TEAM_NAME'] == bet['home_team'] and 
-                        row['AWAY_TEAM'] == bet['away_team']):
+                        row.get('TEAM_NAME.1', row.get('AWAY_TEAM', '')) == bet['away_team']):
                         game_info = row
                         break
                 
@@ -1611,17 +2047,29 @@ def create_beautiful_excel_report(result, df, start_date, end_date):
         traceback.print_exc()
 
 def main():
-    """Main backtesting function - Focus on auto-selected model only"""
-    parser = argparse.ArgumentParser(description='NBA ML Backtesting Script - Auto-Selected Model Only')
+    """Main backtesting function with comprehensive model comparison"""
+    parser = argparse.ArgumentParser(description='NBA ML Backtesting Script with Multi-Model Comparison')
     parser.add_argument('--start-date', default='2023-10-01', help='Start date for backtesting')
     parser.add_argument('--end-date', default='2024-06-30', help='End date for backtesting')
     parser.add_argument('--bet-size', type=float, default=100, help='Bet size in dollars')
     parser.add_argument('--confidence', type=float, default=0.55, help='Confidence threshold for betting')
     parser.add_argument('--no-plots', action='store_true', help='Skip plot generation')
+    parser.add_argument('--compare-all', action='store_true', help='Compare all available models (comprehensive)')
+    parser.add_argument('--model', type=str, default=None, help='Specific model to test (original_xgb, advanced_xgb, super_advanced_xgb, etc.)')
     
     args = parser.parse_args()
     
     print_header()
+    
+    # Show mode
+    if args.compare_all:
+        print("\n🏆 MODE: Comprehensive Model Comparison")
+        print("   Testing ALL available models and comparing performance")
+    elif args.model:
+        print(f"\n🎯 MODE: Single Model Test ({args.model})")
+    else:
+        print("\n📊 MODE: Best Model (Auto-Selected)")
+    print("="*70 + "\n")
     
     # Load historical data
     df = load_historical_data(args.start_date, args.end_date)
@@ -1629,64 +2077,103 @@ def main():
         print("❌ No historical data available for backtesting")
         return False
     
-    # Load the best available model (prioritize ensemble)
-    print("🤖 Loading best available model...")
-    try:
-        sys.path.append('src/Predict')
-        from AutoModelSelector import AutoModelSelector
+    # COMPARE ALL MODELS MODE
+    if args.compare_all:
+        models = load_available_models()
         
-        selector = AutoModelSelector()
-        available_models = selector.scan_available_models()
-        
-        if not available_models:
-            print("❌ No trained models found for backtesting")
-            print("💡 Train models first: python train.py --all")
+        if not models:
+            print("❌ No trained models found")
             return False
         
-        # Use the best available model with proper feature handling
-        best_model = selector.select_best_model()
-        if not best_model:
-            print("❌ No best model selected")
+        print(f"\n🏆 Running comprehensive comparison of {len(models)} models...")
+        comparison_results = backtest_all_models_comparison(
+            models, df, args.bet_size, args.confidence
+        )
+        
+        if comparison_results:
+            print(f"\n✅ Comparison complete! Tested {len(comparison_results)} models.")
+            return True
+        else:
+            print("❌ Comparison failed")
+            return False
+    
+    # SINGLE SPECIFIC MODEL MODE
+    elif args.model:
+        models = load_available_models()
+        
+        if args.model not in models:
+            print(f"❌ Model '{args.model}' not found")
+            print(f"💡 Available: {', '.join(models.keys())}")
             return False
         
-        model_info = {
-            'selector': selector,
-            'info': best_model,
-            'name': best_model['name'],
-            'type': 'auto'
-        }
-        print(f"✅ Using model: {best_model['name']}")
+        model_info = models[args.model]
+        print(f"✅ Testing: {model_info['name']}\n")
         
-    except Exception as e:
-        print(f"❌ Failed to load model: {e}")
-        return False
+        result = backtest_model(model_info, df, args.bet_size, args.confidence)
+        
+        if result:
+            create_beautiful_excel_report(result, df, args.start_date, args.end_date)
+            if not args.no_plots:
+                create_running_profit_charts({args.model: result}, save_plots=True)
+            return True
+        else:
+            return False
     
-    # Run backtesting on auto-selected model only
-    print(f"\n🧪 Running backtesting on auto-selected model...")
-    result = backtest_model(model_info, df, args.bet_size, args.confidence)
-    
-    if not result:
-        print("❌ Backtesting failed")
-        return False
-    
-    # Create beautiful Excel file
-    print(f"\n📊 Creating beautiful Excel report...")
-    create_beautiful_excel_report(result, df, args.start_date, args.end_date)
-    
-    # Generate running profit chart
-    if not args.no_plots:
-        create_running_profit_charts({'auto_selected': result}, save_plots=True)
-    
-    # Final summary
-    print(f"\n🎉 BACKTESTING COMPLETE!")
-    print(f"📊 Tested model on {len(df)} unique games")
-    print(f"📅 Period: {args.start_date} to {args.end_date}")
-    print(f"🏆 Model: {model_info['name']} (ROI: {result['roi']:.1f}%)")
-    print(f"💰 Total Profit: ${result['total_profit']:,.2f}")
-    print(f"📈 Win Rate: {result['win_rate']:.1f}%")
-    print(f"🎯 Total Bets: {result['total_bets']}")
-    
-    return True
+    # DEFAULT: AUTO-SELECTED BEST MODEL
+    else:
+        print("🤖 Auto-selecting best available model...")
+        try:
+            sys.path.append('src/Predict')
+            from AutoModelSelector import AutoModelSelector
+            
+            selector = AutoModelSelector()
+            available_models_scan = selector.scan_available_models()
+            
+            if not available_models_scan:
+                print("❌ No trained models found")
+                return False
+            
+            best_model = selector.select_best_model()
+            if not best_model:
+                print("❌ No best model selected")
+                return False
+            
+            model_info = {
+                'selector': selector,
+                'info': best_model,
+                'name': best_model['name'],
+                'type': 'auto'
+            }
+            print(f"✅ Using model: {best_model['name']}\n")
+            
+        except Exception as e:
+            print(f"❌ Failed to load model: {e}")
+            return False
+        
+        # Run backtesting
+        result = backtest_model(model_info, df, args.bet_size, args.confidence)
+        
+        if not result:
+            print("❌ Backtesting failed")
+            return False
+        
+        # Create reports
+        create_beautiful_excel_report(result, df, args.start_date, args.end_date)
+        
+        if not args.no_plots:
+            create_running_profit_charts({'auto_selected': result}, save_plots=True)
+        
+        # Final summary
+        print(f"\n🎉 BACKTESTING COMPLETE!")
+        print(f"📊 Tested on {len(df)} unique games")
+        print(f"📅 Period: {args.start_date} to {args.end_date}")
+        print(f"🏆 Model: {model_info['name']}")
+        print(f"💰 ROI: {result['roi']:.1f}%")
+        print(f"💵 Profit: ${result['total_profit']:,.2f}")
+        print(f"📈 Win Rate: {result['win_rate']:.1f}%")
+        print(f"🎯 Bets: {result['total_bets']}")
+        
+        return True
 
 if __name__ == "__main__":
     success = main()
