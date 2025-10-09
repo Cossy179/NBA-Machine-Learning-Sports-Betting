@@ -110,6 +110,18 @@ venv.bak/
 web_database.db
 web_database_backup_*.db
 
-#ignore Data/dataset.sqlite
+#ignore large database files
 Data/dataset.sqlite
 Data/dataset_backup_*.sqlite
+Data/teams.sqlite
+Data/TeamData.sqlite
+Data/OddsData.sqlite
+Data/PlayerStats.sqlite
+
+#ignore large model files
+Models/XGBoost_Models/*.json
+Models/Ensemble_Models/*.pkl
+Models/NN_Models/
+Models/Boosted_Models/
+Models/Online_Models/
+Models/Parlay_Models/
