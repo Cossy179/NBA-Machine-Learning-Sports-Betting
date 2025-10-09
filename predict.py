@@ -67,8 +67,8 @@ def load_real_time_data():
         return None
 
 def get_todays_games(sportsbook='fanduel'):
-    """Get today's NBA games with odds from multiple sources"""
-    print(f"🏀 Fetching today's NBA games from {sportsbook}...")
+    """Get NBA games for the next 20 hours (UK timezone) with odds from multiple sources"""
+    print(f"🏀 Fetching NBA games for the next 20 hours (UK timezone) from {sportsbook}...")
     
     games = []
     
@@ -77,9 +77,9 @@ def get_todays_games(sportsbook='fanduel'):
         sys.path.append('src/DataProviders')
         from SbrOddsProvider import SbrOddsProvider
         
-        provider = SbrOddsProvider(sportsbook=sportsbook)
+        provider = SbrOddsProvider(sportsbook=sportsbook, hours_ahead=20)
         if provider.games:
-            print(f"✅ Found {len(provider.games)} games from SBR")
+            print(f"✅ Found {len(provider.games)} games from SBR (next 20 hours, UK timezone)")
             for game in provider.games:
                 games.append({
                     'home_team': game['home_team'],
@@ -99,10 +99,10 @@ def get_todays_games(sportsbook='fanduel'):
         from PlayerStatsProvider import PlayerStatsProvider
         
         provider = PlayerStatsProvider()
-        todays_games = provider.get_todays_games_and_rosters()
+        todays_games = provider.get_todays_games_and_rosters(hours_ahead=20)
         
         if todays_games:
-            print(f"✅ Found {len(todays_games)} games from NBA Stats API")
+            print(f"✅ Found {len(todays_games)} games from NBA Stats API (next 20 hours, UK timezone)")
             for game in todays_games:
                 # Convert team IDs to full names
                 home_name = get_team_full_name(game.get('home_team', ''))
@@ -112,6 +112,7 @@ def get_todays_games(sportsbook='fanduel'):
                     'home_team': home_name,
                     'away_team': away_name,
                     'game_time': game.get('game_time', 'TBD'),
+                    'game_date': game.get('game_date', ''),
                     'home_odds': None,  # Will be filled by odds API if available
                     'away_odds': None,
                     'spread': None,
@@ -132,6 +133,9 @@ def get_todays_games(sportsbook='fanduel'):
         if rt_provider.available_services.get('the_odds_api'):
             # Fetch odds from The Odds API
             import requests
+            from datetime import datetime, timedelta
+            import pytz
+            
             api_key = rt_provider.api_keys.get('the_odds_api')
             url = f"{rt_provider.endpoints['the_odds_api']}/sports/basketball_nba/odds"
             params = {
@@ -144,9 +148,33 @@ def get_todays_games(sportsbook='fanduel'):
             response = requests.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                print(f"✅ Found {len(data)} games from The Odds API")
+                
+                # Filter games for next 20 hours using UK timezone
+                uk_tz = pytz.timezone('Europe/London')
+                now_uk = datetime.now(uk_tz)
+                next_20h_uk = now_uk + timedelta(hours=20)
+                filtered_games = []
                 
                 for game in data:
+                    try:
+                        # Parse game time
+                        game_time_str = game.get('commence_time', '')
+                        if game_time_str:
+                            # The Odds API returns ISO format timestamps
+                            game_time = datetime.fromisoformat(game_time_str.replace('Z', '+00:00'))
+                            # Convert to UK timezone for comparison
+                            game_time_uk = game_time.astimezone(uk_tz)
+                            
+                            # Check if game is within next 20 hours (UK time)
+                            if now_uk <= game_time_uk <= next_20h_uk:
+                                filtered_games.append(game)
+                    except Exception as e:
+                        # If we can't parse the time, include the game anyway
+                        filtered_games.append(game)
+                
+                print(f"✅ Found {len(filtered_games)} games from The Odds API (next 20 hours, UK timezone)")
+                
+                for game in filtered_games:
                     home_team = game.get('home_team', '')
                     away_team = game.get('away_team', '')
                     
@@ -184,9 +212,9 @@ def get_todays_games(sportsbook='fanduel'):
     
     # If all methods fail, inform user
     if not games:
-        print("❌ No games found for today")
+        print("❌ No games found for the next 20 hours (UK timezone)")
         print("💡 Possible reasons:")
-        print("   - No NBA games scheduled today (off-season or off-day)")
+        print("   - No NBA games scheduled in the next 20 hours (off-season or off-day)")
         print("   - API keys not configured in config.toml")
         print("   - Network connectivity issues")
         print("\n🔧 To fix:")
@@ -886,7 +914,7 @@ def generate_parlays(predictions, min_confidence=0.3, max_legs=6):
 
 def display_predictions(predictions, show_details=True):
     """Display predictions in a formatted way"""
-    print(f"\n🔮 TODAY'S NBA PREDICTIONS")
+    print(f"\n🔮 NBA PREDICTIONS (NEXT 20 HOURS - UK TIMEZONE)")
     print("="*70)
     
     for i, pred in enumerate(predictions, 1):
@@ -1015,10 +1043,10 @@ def main():
         else:
             print("⚠️ Real-time data unavailable, using base predictions")
     
-    # Get today's games
+    # Get games for the next 20 hours (UK timezone)
     games = get_todays_games(args.sportsbook)
     if not games:
-        print("❌ No games found for today")
+        print("❌ No games found for the next 20 hours (UK timezone)")
         print("💡 Check your internet connection or try a different sportsbook")
         return False
     

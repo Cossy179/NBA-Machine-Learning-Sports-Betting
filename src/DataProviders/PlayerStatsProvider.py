@@ -196,33 +196,112 @@ class PlayerStatsProvider:
         
         return pd.DataFrame()
     
-    def get_todays_games_and_rosters(self):
-        """Get today's games with starting lineups"""
-        # Get today's games
-        url = f"{self.base_url}scoreboardV2"
-        params = {
-            'DayOffset': 0,
-            'LeagueID': '00',
-            'gameDate': datetime.now().strftime('%m/%d/%Y')
-        }
+    def get_todays_games_and_rosters(self, hours_ahead=20):
+        """Get games for the next 20 hours (UK timezone) with starting lineups"""
+        import pytz
         
-        games_data = self.safe_request(url, params)
         games_info = []
         
-        if games_data and 'resultSets' in games_data:
-            for result_set in games_data['resultSets']:
-                if result_set['name'] == 'GameHeader':
-                    headers = result_set['headers']
-                    for row in result_set['rowSet']:
-                        game_dict = dict(zip(headers, row))
-                        games_info.append({
-                            'game_id': game_dict['GAME_ID'],
-                            'home_team_id': game_dict['HOME_TEAM_ID'],
-                            'away_team_id': game_dict['VISITOR_TEAM_ID'],
-                            'home_team': game_dict.get('HOME_TEAM_ABBREVIATION', ''),
-                            'away_team': game_dict.get('VISITOR_TEAM_ABBREVIATION', ''),
-                            'game_time': game_dict.get('GAME_STATUS_TEXT', '')
-                        })
+        # Get UK timezone
+        uk_tz = pytz.timezone('Europe/London')
+        now_uk = datetime.now(uk_tz)
+        cutoff_time_uk = now_uk + timedelta(hours=hours_ahead)
+        
+        # Fetch games for today and tomorrow to cover the time range
+        for day_offset in range(2):  # Today and tomorrow
+            try:
+                # Get games for this day
+                url = f"{self.base_url}scoreboardV2"
+                params = {
+                    'DayOffset': day_offset,
+                    'LeagueID': '00',
+                    'gameDate': (now_uk + timedelta(days=day_offset)).strftime('%m/%d/%Y')
+                }
+                
+                games_data = self.safe_request(url, params)
+                
+                if games_data and 'resultSets' in games_data:
+                    for result_set in games_data['resultSets']:
+                        if result_set['name'] == 'GameHeader':
+                            headers = result_set['headers']
+                            for row in result_set['rowSet']:
+                                game_dict = dict(zip(headers, row))
+                                
+                                # Check if game is within the UK time window
+                                game_time_str = game_dict.get('GAME_STATUS_TEXT', '')
+                                game_datetime_uk = self._parse_nba_game_time_uk(game_time_str, day_offset, now_uk)
+                                
+                                # Include game if it's within the time window or if we can't parse the time (include today's games)
+                                if game_datetime_uk and now_uk <= game_datetime_uk <= cutoff_time_uk:
+                                    games_info.append({
+                                        'game_id': game_dict['GAME_ID'],
+                                        'home_team_id': game_dict['HOME_TEAM_ID'],
+                                        'away_team_id': game_dict['VISITOR_TEAM_ID'],
+                                        'home_team': game_dict.get('HOME_TEAM_ABBREVIATION', ''),
+                                        'away_team': game_dict.get('VISITOR_TEAM_ABBREVIATION', ''),
+                                        'game_time': game_time_str,
+                                        'game_date': (now_uk + timedelta(days=day_offset)).strftime('%Y-%m-%d')
+                                    })
+                                elif not game_datetime_uk and day_offset == 0:
+                                    # If we can't parse time, include today's games
+                                    games_info.append({
+                                        'game_id': game_dict['GAME_ID'],
+                                        'home_team_id': game_dict['HOME_TEAM_ID'],
+                                        'away_team_id': game_dict['VISITOR_TEAM_ID'],
+                                        'home_team': game_dict.get('HOME_TEAM_ABBREVIATION', ''),
+                                        'away_team': game_dict.get('VISITOR_TEAM_ABBREVIATION', ''),
+                                        'game_time': game_time_str,
+                                        'game_date': (now_uk + timedelta(days=day_offset)).strftime('%Y-%m-%d')
+                                    })
+            except Exception as e:
+                print(f"Warning: Could not fetch games for day {day_offset}: {e}")
+                continue
+
+    def _parse_nba_game_time_uk(self, time_str, day_offset, now_uk):
+        """Parse NBA game time string and return datetime object in UK timezone"""
+        try:
+            import pytz
+            
+            if not time_str or time_str in ['TBD', 'Final', 'Postponed', 'Cancelled']:
+                return None
+                
+            uk_tz = pytz.timezone('Europe/London')
+            target_date = now_uk + timedelta(days=day_offset)
+            
+            # NBA Stats API typically returns times in various formats
+            # Try to extract time from the status text
+            time_formats = [
+                '%I:%M %p',   # 7:30 PM
+                '%I:%M%p',    # 7:30PM
+                '%H:%M',      # 19:30
+                '%H:%M:%S',   # 19:30:00
+            ]
+            
+            # Look for time patterns in the string
+            import re
+            time_patterns = [
+                r'(\d{1,2}:\d{2}\s*[AP]M)',  # 7:30 PM
+                r'(\d{1,2}:\d{2}[AP]M)',     # 7:30PM
+                r'(\d{1,2}:\d{2})',          # 19:30
+            ]
+            
+            for pattern in time_patterns:
+                match = re.search(pattern, time_str, re.IGNORECASE)
+                if match:
+                    time_part_str = match.group(1)
+                    for fmt in time_formats:
+                        try:
+                            time_part = datetime.strptime(time_part_str.strip(), fmt).time()
+                            game_datetime_naive = datetime.combine(target_date.date(), time_part)
+                            game_datetime_uk = uk_tz.localize(game_datetime_naive)
+                            return game_datetime_uk
+                        except ValueError:
+                            continue
+            
+            return None
+            
+        except Exception:
+            return None
         
         # Get rosters for each team
         for game in games_info:
