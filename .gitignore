@@ -109,3 +109,7 @@ venv.bak/
 #ignore web_database.db and any database backup files
 web_database.db
 web_database_backup_*.db
+
+#ignore Data/dataset.sqlite
+Data/dataset.sqlite
+Data/dataset_backup_*.sqlite
