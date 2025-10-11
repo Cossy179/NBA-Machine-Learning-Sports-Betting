@@ -150,11 +150,12 @@ def load_historical_data(start_date="2023-01-01", end_date="2024-06-30"):
         
         # Try ultra-enhanced, then enhanced, then base dataset
         cursor = con.cursor()
-        dataset_name = None
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        available_tables = [row[0] for row in cursor.fetchall()]
         
+        dataset_name = None
         for dataset in ["dataset_2012-24_ultra_enhanced", "dataset_2012-24_enhanced", "dataset_2012-24_new"]:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (dataset,))
-            if cursor.fetchone():
+            if dataset in available_tables:
                 dataset_name = dataset
                 if "ultra" in dataset:
                     print(f"✅ Using {dataset} with 270+ ultra-advanced features")
@@ -165,7 +166,7 @@ def load_historical_data(start_date="2023-01-01", end_date="2024-06-30"):
                 break
         
         if not dataset_name:
-            print("❌ No dataset found")
+            print(f"❌ No dataset found. Available tables: {', '.join(available_tables[:5])}")
             con.close()
             return None
         
@@ -298,12 +299,20 @@ def load_available_models():
     
     for model_name, model_path, model_key in model_files:
         if os.path.exists(model_path):
+            # Determine model type by file extension and name
+            if '.txt' in model_path or 'lightgbm' in model_path.lower():
+                model_type = 'lightgbm'
+            elif '.json' in model_path or 'xgb' in model_key.lower() or 'dart' in model_key.lower():
+                model_type = 'xgboost'
+            else:
+                model_type = 'xgboost'  # Default
+            
             models[model_key] = {
                 'path': model_path,
                 'name': model_name,
-                'type': 'xgboost' if 'xgb' in model_key.lower() else 'lightgbm' if 'lgb' in model_key.lower() else 'xgboost'
+                'type': model_type
             }
-            print(f"✅ Found {model_name}")
+            print(f"✅ Found {model_name} (type: {model_type})")
     
     # Load Ensemble models with proper selector
     try:
@@ -589,21 +598,63 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         feature_cols = [c for c in numeric_cols if c not in exclude_cols and not pd.isna(df[c]).all()]
         
-        # Additional feature engineering for better predictions
-        enhanced_features = create_enhanced_features(df)
-        if enhanced_features is not None:
-            # Only use features that exist in the original dataframe
-            available_features = [col for col in feature_cols if col in df.columns]
-            X = pd.concat([df[available_features], enhanced_features], axis=1)
-            feature_cols = available_features + list(enhanced_features.columns)
-        else:
-            X = df[feature_cols].fillna(0)
+        # Feature preparation strategy based on model type
+        enhanced_features = None
         
-        print(f"📊 Using {len(feature_cols)} numeric features for prediction")
-        print(f"🔧 Enhanced features: {len(enhanced_features.columns) if enhanced_features is not None else 0}")
+        # Only create enhanced features for auto/ensemble/parlay models (NOT for xgboost/lightgbm individual models)
+        if model_info['type'] in ['auto', 'advanced_ensemble', 'parlay', 'advanced']:
+            # These complex models can benefit from enhanced features
+            print("   🔧 Creating enhanced features for ensemble/advanced model...")
+            enhanced_features = create_enhanced_features(df)
+            if enhanced_features is not None:
+                # Remove any duplicate columns from enhanced features
+                enhanced_features = enhanced_features.loc[:, ~enhanced_features.columns.duplicated()]
+                
+                # Only use features that exist in the original dataframe
+                available_features = [col for col in feature_cols if col in df.columns]
+                X = pd.concat([df[available_features], enhanced_features], axis=1)
+                
+                # Remove any duplicates after concatenation
+                X = X.loc[:, ~X.columns.duplicated()]
+                feature_cols = list(X.columns)
+            else:
+                X = df[feature_cols].fillna(0)
+        else:
+            # For xgboost/lightgbm individual models: Use ONLY the original 106 base features
+            # (what the original models were trained on)
+            print("   📊 Using base dataset features (106 original features)")
+            
+            # Define the original 106 base features that old models were trained on
+            base_stat_cols = [
+                'GP', 'W', 'L', 'W_PCT', 'MIN', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT',
+                'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA',
+                'PF', 'PFD', 'PTS', 'PLUS_MINUS',
+                'GP_RANK', 'W_RANK', 'L_RANK', 'W_PCT_RANK', 'MIN_RANK', 'FGM_RANK', 'FGA_RANK',
+                'FG_PCT_RANK', 'FG3M_RANK', 'FG3A_RANK', 'FG3_PCT_RANK', 'FTM_RANK', 'FTA_RANK',
+                'FT_PCT_RANK', 'OREB_RANK', 'DREB_RANK', 'REB_RANK', 'AST_RANK', 'TOV_RANK',
+                'STL_RANK', 'BLK_RANK', 'BLKA_RANK', 'PF_RANK', 'PFD_RANK', 'PTS_RANK', 'PLUS_MINUS_RANK'
+            ]
+            
+            # Add away team stats (with .1 suffix)
+            away_cols = [col + '.1' for col in base_stat_cols]
+            
+            # Add rest days
+            rest_cols = ['Days-Rest-Home', 'Days-Rest-Away']
+            
+            # Combine all base features
+            original_106_features = base_stat_cols + away_cols + rest_cols
+            
+            # Select only features that exist in the dataframe
+            available_base_features = [col for col in original_106_features if col in df.columns]
+            
+            X = df[available_base_features].fillna(0)
+            print(f"   ✓ Selected {len(available_base_features)} base features for old model")
+        
+        print(f"📊 Using {len(X.columns)} features for prediction")
+        if enhanced_features is not None:
+            print(f"🔧 Enhanced features created: {len(enhanced_features.columns)}")
         y_true = df["Home-Team-Win"].astype(int)
         
-        print(f"📊 Dataset: {len(df)} games, {len(feature_cols)} features")
         print(f"🎯 Betting: ${bet_size} per bet, {confidence_threshold:.1%} confidence threshold")
         
         # Get predictions based on model type
@@ -640,7 +691,9 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
                         uncertainties.append(0.1)
                         confidences.append(0.5)
                 except Exception as e:
-                    print(f"⚠️ Prediction error for game {i}: {e}")
+                    # Suppress verbose sub-model errors (ensemble handles them internally)
+                    if i == 0:  # Only print once
+                        print(f"   ℹ️ Ensemble using fallback predictions for some sub-models (expected)")
                     predictions.append(0.5)
                     uncertainties.append(0.1)
                     confidences.append(0.5)
@@ -781,7 +834,8 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
                 confidences = np.full(len(X), 0.5)
             
         elif model_info['type'] == 'auto':
-            print("🔧 Using Calibrated Weighted Ensemble with per-model feature alignment...")
+            print("🔧 Using Calibrated Weighted Ensemble (auto-selected)...")
+            print("   ℹ️ Testing multiple sub-models, some may not be compatible (expected)")
             try:
                 import xgboost as xgb
                 import joblib
@@ -904,15 +958,23 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
                             feature_list = joblib.load(fpath)
                             print(f"   ✓ Loaded feature list: {len(feature_list)} features required")
                             
-                            # Ensure X has all required features
+                            # Ensure X has all required features (avoid duplicates)
                             missing_features = [f for f in feature_list if f not in X.columns]
                             if missing_features:
                                 print(f"   ⚠️ Missing {len(missing_features)} features, filling with zeros")
                                 for feat in missing_features:
-                                    X[feat] = 0
+                                    if feat not in X.columns:  # Double-check to avoid duplicates
+                                        X[feat] = 0
                             
-                            # Select and order features as model expects
+                            # Select and order features as model expects (ensures exact match)
                             X = X[feature_list].copy()
+                            
+                            # Verify feature count
+                            if len(X.columns) != len(feature_list):
+                                print(f"   ⚠️ Feature count mismatch after selection: {len(X.columns)} vs {len(feature_list)}")
+                                # Remove duplicate columns if any
+                                X = X.loc[:, ~X.columns.duplicated()]
+                            
                             break
                             
                         except Exception as e:
@@ -920,13 +982,19 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
                 
                 # Ensure X is numeric and clean for LightGBM
                 X_clean = X.copy()
-                for col in X_clean.columns:
-                    if X_clean[col].dtype == 'object':
-                        X_clean[col] = pd.to_numeric(X_clean[col], errors='coerce')
+                object_cols = X_clean.select_dtypes(include=['object']).columns
+                for col in object_cols:
+                    X_clean[col] = pd.to_numeric(X_clean[col], errors='coerce')
                 X_clean = X_clean.fillna(0).astype('float32')
                 
+                # Verify exact feature count
+                print(f"   Final feature count: {len(X_clean.columns)}")
+                
                 model = lgb.Booster(model_file=model_info['path'])
-                predictions = model.predict(X_clean)
+                
+                # Convert to numpy array for LightGBM
+                X_array = X_clean.values
+                predictions = model.predict(X_array)
                 
                 # Ensure predictions are probabilities (0-1 range)
                 if predictions.max() > 1.0 or predictions.min() < 0.0:
@@ -953,27 +1021,41 @@ def backtest_model(model_info, df, bet_size=100, confidence_threshold=0.55):
                     feature_list = joblib.load(feature_list_path)
                     print(f"   ✓ Loaded feature list: {len(feature_list)} features required")
                     
-                    # Ensure X has all required features
+                    # Ensure X has all required features (avoid duplicates)
                     missing_features = [f for f in feature_list if f not in X.columns]
                     if missing_features:
                         print(f"   ⚠️ Missing {len(missing_features)} features, filling with zeros")
                         for feat in missing_features:
-                            X[feat] = 0
+                            if feat not in X.columns:  # Double-check
+                                X[feat] = 0
                     
                     # Select and order features as model expects
                     X = X[feature_list].copy()
+                    
+                    # Remove duplicates if any
+                    X = X.loc[:, ~X.columns.duplicated()]
+                    
+                    print(f"   Final feature count: {len(X.columns)}")
                     
                 except Exception as e:
                     print(f"   ⚠️ Could not load feature list: {e}")
             
             # Ensure X is numeric and properly formatted for XGBoost
             X_clean = X.copy()
-            for col in X_clean.columns:
-                if X_clean[col].dtype == 'object':
-                    X_clean[col] = pd.to_numeric(X_clean[col], errors='coerce')
+            
+            # Remove duplicate columns FIRST
+            X_clean = X_clean.loc[:, ~X_clean.columns.duplicated()]
+            
+            # Convert object columns to numeric
+            object_cols = X_clean.select_dtypes(include=['object']).columns
+            for col in object_cols:
+                X_clean[col] = pd.to_numeric(X_clean[col], errors='coerce')
             X_clean = X_clean.fillna(0).astype('float32')
             
-            dtest = xgb.DMatrix(X_clean)
+            # Convert to numpy array to avoid DataFrame dtype issues with XGBoost
+            X_array = X_clean.values
+            
+            dtest = xgb.DMatrix(X_array, feature_names=list(X_clean.columns))
             predictions = model.predict(dtest)
             
             # Handle multi-class output

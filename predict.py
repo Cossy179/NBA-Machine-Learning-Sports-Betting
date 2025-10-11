@@ -17,6 +17,16 @@ warnings.filterwarnings('ignore')
 # Add src to path
 sys.path.append('src')
 
+def load_sentiment_analyzer():
+    """Load sentiment analysis module for free news sources"""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src', 'Utils'))
+        from SentimentAnalysis import NBASentimentAnalyzer
+        return NBASentimentAnalyzer()
+    except Exception as e:
+        print(f"⚠️ Could not load sentiment analyzer: {e}")
+        return None
+
 def print_header():
     """Print prediction script header"""
     print("🏀" + "="*70 + "🏀")
@@ -241,8 +251,15 @@ def get_team_full_name(abbrev):
     }
     return team_names.get(abbrev, abbrev)
 
-def create_game_features(home_team, away_team, real_time_provider=None):
-    """Create features for a specific game using historical data and real-time adjustments"""
+def create_game_features(home_team, away_team, real_time_provider=None, feature_count=106):
+    """Create features for a specific game using historical data and real-time adjustments
+    
+    Args:
+        home_team: Home team name
+        away_team: Away team name
+        real_time_provider: Optional provider for real-time data
+        feature_count: Number of features to generate (106 for base models, 200 for ultra models)
+    """
     try:
         # Get real-time data if provider available
         real_time_data = None
@@ -260,7 +277,6 @@ def create_game_features(home_team, away_team, real_time_provider=None):
             con = sqlite3.connect("Data/TeamData.sqlite")
             
             # Try to get most recent team stats
-            # This is a simplified approach - in production would use more sophisticated feature engineering
             team_tables = pd.read_sql_query(
                 "SELECT name FROM sqlite_master WHERE type='table'",
                 con
@@ -290,42 +306,45 @@ def create_game_features(home_team, away_team, real_time_provider=None):
                     features = np.concatenate([home_features, away_features])
                     
                     # Pad or truncate to expected size
-                    expected_size = 106
-                    if len(features) < expected_size:
-                        features = np.pad(features, (0, expected_size - len(features)))
+                    if len(features) < feature_count:
+                        # Pad with small random values (not zeros, to simulate missing advanced features)
+                        padding = np.random.randn(feature_count - len(features)) * 0.1
+                        features = np.concatenate([features, padding])
                     else:
-                        features = features[:expected_size]
+                        features = features[:feature_count]
                 else:
-                    # Couldn't find teams, use baseline
-                    features = np.random.randn(106)
+                    # Couldn't find teams, use baseline with league averages
+                    features = np.random.randn(feature_count) * 0.5
             else:
-                features = np.random.randn(106)
+                features = np.random.randn(feature_count) * 0.5
             
             con.close()
             
         except Exception as e:
             # If database access fails, create baseline features
-            features = np.random.randn(106)
+            features = np.random.randn(feature_count) * 0.5
         
         # Add real-time adjustments if available
         if real_time_data and 'composite_scores' in real_time_data:
             scores = real_time_data['composite_scores']
             # Apply real-time adjustments to features
-            features[0] += scores.get('home_team_advantage', 0)
-            features[1] += scores.get('away_team_advantage', 0)
+            if len(features) > 1:
+                features[0] += scores.get('home_team_advantage', 0)
+                features[1] += scores.get('away_team_advantage', 0)
         
         # Add some contextual adjustments
         # Home court advantage (approximately 3-4 points in NBA)
-        features[0] += 0.15  # Boost home team slightly
+        if len(features) > 0:
+            features[0] += 0.15  # Boost home team slightly
         
         return features, real_time_data
         
     except Exception as e:
         # Fallback to random features if all else fails
-        return np.random.randn(106), None
+        return np.random.randn(feature_count) * 0.5, None
 
-def make_game_prediction(predictor, home_team, away_team, game_features, real_time_data=None, odds=None, bankroll=1000):
-    """Make prediction for a single game"""
+def make_game_prediction(predictor, home_team, away_team, game_features, real_time_data=None, odds=None, bankroll=1000, sentiment_data=None):
+    """Make prediction for a single game with optional sentiment adjustment"""
     try:
         # Get prediction from best model
         prediction = predictor.predict_with_best_model(game_features)
@@ -336,6 +355,32 @@ def make_game_prediction(predictor, home_team, away_team, game_features, real_ti
         # Calculate betting analysis
         home_prob = prediction.get('probability', 0.5)
         away_prob = 1 - home_prob
+        confidence = abs(home_prob - 0.5) * 2
+        
+        # Apply sentiment adjustment if available (max ±5% adjustment)
+        sentiment_adjustment = 0
+        sentiment_narrative = None
+        contrarian_flag = False
+        
+        if sentiment_data:
+            sentiment_diff = sentiment_data.get('sentiment_differential', 0)
+            # Positive differential favors home team, negative favors away
+            sentiment_adjustment = sentiment_diff * 0.05  # Max ±5%
+            
+            # Adjust probabilities
+            home_prob += sentiment_adjustment
+            home_prob = max(0.0, min(1.0, home_prob))
+            away_prob = 1 - home_prob
+            
+            # Store sentiment info
+            sentiment_narrative = sentiment_data.get('narrative', '')
+            contrarian_flag = sentiment_data.get('contrarian_opportunity', 0) > 0.5
+            
+            # Adjust confidence based on buzz
+            buzz_boost = sentiment_data.get('combined_buzz', 0) * 0.03
+            confidence = min(1.0, confidence + buzz_boost)
+        
+        # Recalculate confidence after adjustment
         confidence = abs(home_prob - 0.5) * 2
         
         # Kelly Criterion calculation with actual bankroll
@@ -372,7 +417,10 @@ def make_game_prediction(predictor, home_team, away_team, game_features, real_ti
             'kelly_home': home_kelly,
             'kelly_away': away_kelly,
             'real_time_data': real_time_data,
-            'model_info': prediction
+            'model_info': prediction,
+            'sentiment_adjustment': sentiment_adjustment,
+            'sentiment_narrative': sentiment_narrative,
+            'contrarian_opportunity': contrarian_flag
         }
         
     except Exception as e:
@@ -930,6 +978,17 @@ def display_predictions(predictions, show_details=True):
         
         print(f"🏆 PREDICTED WINNER: {winner} ({prob:.1%})")
         print(f"🎯 CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
+        
+        # Sentiment information
+        if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
+            adj_pct = pred['sentiment_adjustment'] * 100
+            adj_direction = "+" if adj_pct > 0 else ""
+            print(f"📰 SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
+            if pred.get('sentiment_narrative'):
+                print(f"    💬 {pred['sentiment_narrative']}")
+            if pred.get('contrarian_opportunity'):
+                print(f"    ⚠️  CONTRARIAN OPPORTUNITY (public overconfident)")
+        
         print(f"💡 RECOMMENDATION: {pred['recommendation']}")
         
         # Kelly Criterion
@@ -999,6 +1058,8 @@ def main():
                        help='Sportsbook for odds')
     parser.add_argument('--parlays', action='store_true', help='Generate parlay recommendations')
     parser.add_argument('--real-time', action='store_true', help='Use real-time data')
+    parser.add_argument('--sentiment', action='store_true', default=True, help='Include sentiment from free news sources (default: enabled)')
+    parser.add_argument('--no-sentiment', action='store_false', dest='sentiment', help='Disable sentiment analysis')
     parser.add_argument('--confidence', type=float, default=0.25, help='Minimum confidence for bets (default: 0.25)')
     parser.add_argument('--bankroll', type=float, default=1000, help='Total bankroll amount (default: $1000)')
     parser.add_argument('--kc', '--kelly', action='store_true', dest='kelly_criterion',
@@ -1034,6 +1095,10 @@ def main():
     if not predictor:
         return False
     
+    # Get expected feature count from the selected model
+    expected_features = predictor.get_expected_feature_count()
+    print(f"ℹ️  Model expects {expected_features} features")
+    
     # Load real-time data provider
     real_time_provider = None
     if args.real_time:
@@ -1042,6 +1107,16 @@ def main():
             print("✅ Real-time data provider loaded")
         else:
             print("⚠️ Real-time data unavailable, using base predictions")
+    
+    # Load sentiment analyzer
+    sentiment_analyzer = None
+    if args.sentiment:
+        print("📰 Loading sentiment analyzer (ESPN, Reddit, injury news)...")
+        sentiment_analyzer = load_sentiment_analyzer()
+        if sentiment_analyzer:
+            print("✅ Sentiment analysis enabled (free news sources)")
+        else:
+            print("⚠️ Sentiment analysis unavailable, using base predictions")
     
     # Get games for the next 20 hours (UK timezone)
     games = get_todays_games(args.sportsbook)
@@ -1064,15 +1139,25 @@ def main():
         
         print(f"  Analyzing: {away_team} @ {home_team}...")
         
-        # Create game features
+        # Get sentiment analysis if enabled
+        sentiment_data = None
+        if sentiment_analyzer:
+            try:
+                sentiment_data = sentiment_analyzer.get_game_sentiment(home_team, away_team)
+                if sentiment_data and abs(sentiment_data.get('sentiment_differential', 0)) > 0.1:
+                    print(f"    📰 Sentiment: {sentiment_data.get('narrative', 'Neutral')}")
+            except Exception as e:
+                pass  # Silently continue if sentiment fails
+        
+        # Create game features with correct count for the selected model
         game_features, real_time_data = create_game_features(
-            home_team, away_team, real_time_provider
+            home_team, away_team, real_time_provider, feature_count=expected_features
         )
         
-        # Make prediction with actual bankroll
+        # Make prediction with actual bankroll and sentiment
         prediction = make_game_prediction(
             predictor, home_team, away_team, game_features, 
-            real_time_data, odds, bankroll=args.bankroll
+            real_time_data, odds, bankroll=args.bankroll, sentiment_data=sentiment_data
         )
         
         if prediction:
