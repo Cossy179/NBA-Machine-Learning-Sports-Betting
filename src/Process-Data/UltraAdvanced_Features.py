@@ -654,10 +654,10 @@ class UltraAdvancedFeatureEngine:
         
         # Try to load enhanced dataset, fall back to base if not available
         try:
-            df = pd.read_sql_query(f'select * from "{base_table_name}"', con, index_col="index")
+            df = pd.read_sql_query(f'select * from "{base_table_name}"', con)
         except:
             print(f"Enhanced dataset not found, using base dataset")
-            df = pd.read_sql_query('select * from "dataset_2012-24_new"', con, index_col="index")
+            df = pd.read_sql_query('select * from "dataset_2012-24_new"', con)
         
         con.close()
         

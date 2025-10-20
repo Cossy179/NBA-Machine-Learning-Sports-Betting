@@ -244,6 +244,124 @@ function logActivity($pdo, $userId, $activityType, $description) {
     ]);
 }
 
+// HuggingFace API integration functions
+function fetchHuggingFacePredictions() {
+    $cacheDir = __DIR__ . '/cache';
+    $cacheFile = $cacheDir . '/predictions.json';
+    
+    // Create cache directory if it doesn't exist
+    if (!file_exists($cacheDir)) {
+        mkdir($cacheDir, 0755, true);
+    }
+    
+    // Check cache (1 hour expiry)
+    if (file_exists($cacheFile) && time() - filemtime($cacheFile) < 3600) {
+        $cached = file_get_contents($cacheFile);
+        return json_decode($cached, true);
+    }
+    
+    // Fetch from HuggingFace
+    try {
+        $hf_url = 'https://cossy179-goon-steen.hf.space/api/predictions';
+        
+        // Use cURL for better error handling
+        $ch = curl_init($hf_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode === 200 && $response) {
+            // Cache the response
+            file_put_contents($cacheFile, $response);
+            return json_decode($response, true);
+        }
+        
+        // If fetch fails, try to use stale cache
+        if (file_exists($cacheFile)) {
+            $cached = file_get_contents($cacheFile);
+            return json_decode($cached, true);
+        }
+        
+        return null;
+        
+    } catch (Exception $e) {
+        logError('HuggingFace API error: ' . $e->getMessage());
+        
+        // Try to use stale cache on error
+        if (file_exists($cacheFile)) {
+            $cached = file_get_contents($cacheFile);
+            return json_decode($cached, true);
+        }
+        
+        return null;
+    }
+}
+
+function getTeamAbbreviation($teamName) {
+    $abbreviations = [
+        'Atlanta Hawks' => 'ATL', 'Boston Celtics' => 'BOS', 'Brooklyn Nets' => 'BKN',
+        'Charlotte Hornets' => 'CHA', 'Chicago Bulls' => 'CHI', 'Cleveland Cavaliers' => 'CLE',
+        'Dallas Mavericks' => 'DAL', 'Denver Nuggets' => 'DEN', 'Detroit Pistons' => 'DET',
+        'Golden State Warriors' => 'GSW', 'Houston Rockets' => 'HOU', 'Indiana Pacers' => 'IND',
+        'LA Clippers' => 'LAC', 'Los Angeles Lakers' => 'LAL', 'Memphis Grizzlies' => 'MEM',
+        'Miami Heat' => 'MIA', 'Milwaukee Bucks' => 'MIL', 'Minnesota Timberwolves' => 'MIN',
+        'New Orleans Pelicans' => 'NOP', 'New York Knicks' => 'NYK', 'Oklahoma City Thunder' => 'OKC',
+        'Orlando Magic' => 'ORL', 'Philadelphia 76ers' => 'PHI', 'Phoenix Suns' => 'PHX',
+        'Portland Trail Blazers' => 'POR', 'Sacramento Kings' => 'SAC', 'San Antonio Spurs' => 'SAS',
+        'Toronto Raptors' => 'TOR', 'Utah Jazz' => 'UTA', 'Washington Wizards' => 'WAS'
+    ];
+    return $abbreviations[$teamName] ?? 'NBA';
+}
+
+function formatOdds($odds) {
+    if ($odds === null) {
+        return '-110';
+    }
+    if ($odds > 0) {
+        return '+' . $odds;
+    }
+    return (string)$odds;
+}
+
+function calculateKellyBetSize($confidence, $odds, $bankroll) {
+    // Kelly Criterion: f = (bp - q) / b
+    // where b = decimal odds - 1, p = win probability, q = 1 - p
+    
+    $p = $confidence / 100;  // Win probability
+    
+    // Convert American odds to decimal
+    if ($odds > 0) {
+        $decimal_odds = ($odds / 100) + 1;
+    } else {
+        $decimal_odds = (100 / abs($odds)) + 1;
+    }
+    
+    $b = $decimal_odds - 1;  // Net odds
+    $q = 1 - $p;  // Loss probability
+    
+    // Kelly formula
+    if ($b <= 0) {
+        return 0;
+    }
+    
+    $kelly = ($b * $p - $q) / $b;
+    
+    // Use fractional Kelly (25% of full Kelly for safety)
+    $fractional_kelly = $kelly * 0.25;
+    
+    // Calculate bet amount
+    $kelly_amount = $fractional_kelly * $bankroll;
+    
+    // Cap at 5% of bankroll
+    $kelly_amount = max(0, min($kelly_amount, $bankroll * 0.05));
+    
+    return round($kelly_amount, 2);
+}
+
 // Main API handler
 try {
     $pdo = getDatabase();
@@ -364,9 +482,83 @@ try {
         ]);
     }
     
-    // Dashboard games
+    // Dashboard games - fetch from HuggingFace
     if ($method === 'GET' && $path === 'api/dashboard/games') {
-        respondJson([]);
+        try {
+            $predictions = fetchHuggingFacePredictions();
+            
+            if (!$predictions || !isset($predictions['games'])) {
+                respondJson([]);
+                return;
+            }
+            
+            // Format games for dashboard
+            $games = [];
+            foreach ($predictions['games'] as $game) {
+                $pred = $game['prediction'];
+                $gameData = [
+                    'id' => $game['id'],
+                    'start_time' => $game['game_time'],
+                    'confidence' => (float)($pred['confidence'] ?? 50),
+                    'home_team' => [
+                        'name' => $game['home_team'],
+                        'abbreviation' => getTeamAbbreviation($game['home_team']),
+                        'record' => '25-15',
+                        'odds' => formatOdds($game['home_odds'])
+                    ],
+                    'away_team' => [
+                        'name' => $game['away_team'],
+                        'abbreviation' => getTeamAbbreviation($game['away_team']),
+                        'record' => '22-18',
+                        'odds' => formatOdds($game['away_odds'])
+                    ],
+                    'prediction' => [
+                        'winner' => $pred['winner'],
+                        'score' => $pred['home_score'] . '-' . $pred['away_score'],
+                        'total' => (string)$pred['total_prediction'],
+                        'spread' => $pred['spread_prediction']
+                    ]
+                ];
+                $games[] = $gameData;
+            }
+            
+            respondJson($games);
+        } catch (Exception $e) {
+            logError('Error fetching games: ' . $e->getMessage());
+            respondJson([]);
+        }
+    }
+    
+    // Dashboard parlays - fetch from HuggingFace
+    if ($method === 'GET' && $path === 'api/dashboard/parlays') {
+        try {
+            $predictions = fetchHuggingFacePredictions();
+            
+            if (!$predictions || !isset($predictions['parlays'])) {
+                respondJson([]);
+                return;
+            }
+            
+            // Format parlays for dashboard
+            $parlays = [];
+            foreach ($predictions['parlays'] as $parlay) {
+                $parlayData = [
+                    'legs' => $parlay['legs'],
+                    'num_legs' => $parlay['num_legs'],
+                    'combined_odds' => round($parlay['combined_odds'], 2),
+                    'american_odds' => $parlay['american_odds'],
+                    'confidence' => round($parlay['confidence'], 1),
+                    'combined_probability' => round($parlay['combined_probability'], 3),
+                    'potential_payout' => round($parlay['combined_odds'], 2) . 'x'
+                ];
+                $parlays[] = $parlayData;
+            }
+            
+            respondJson($parlays);
+        } catch (Exception $e) {
+            logError('Error fetching parlays: ' . $e->getMessage());
+            respondJson([]);
+        }
     }
     
     // Dashboard activity
@@ -989,13 +1181,86 @@ try {
         respondJson(['message' => 'Bankroll updated successfully']);
     }
     
-    // Calculate Kelly
+    // Calculate Kelly - enhanced with HuggingFace predictions
     if ($method === 'POST' && $path === 'api/calculate-kelly') {
-        respondJson([
-            'kelly_amount' => 0,
-            'kelly_percentage' => 0,
-            'confidence' => 75
-        ]);
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
+        
+        $game_id = sanitizeInput($data['game_id'] ?? '');
+        $odds = (int)($data['odds'] ?? -110);
+        
+        try {
+            // Get Authorization header for user bankroll
+            $authHeader = null;
+            if (function_exists('getallheaders')) {
+                $headers = getallheaders();
+                foreach ($headers as $key => $value) {
+                    if (strtolower($key) === 'authorization') {
+                        $authHeader = $value;
+                        break;
+                    }
+                }
+            }
+            
+            $bankroll = 1000.00; // Default
+            
+            if ($authHeader && strpos($authHeader, 'Bearer ') === 0) {
+                $token = substr($authHeader, 7);
+                $tokenParts = explode('.', $token);
+                
+                if (count($tokenParts) === 3) {
+                    try {
+                        $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], $tokenParts[1])), true);
+                        
+                        if ($payload && isset($payload['user_id']) && $payload['exp'] > time()) {
+                            // Get user bankroll
+                            $bankrollData = $pdo->prepare('SELECT total_balance FROM bankrolls WHERE user_id = ?');
+                            $bankrollData->execute([$payload['user_id']]);
+                            $result = $bankrollData->fetch();
+                            
+                            if ($result) {
+                                $bankroll = (float)$result['total_balance'];
+                            }
+                        }
+                    } catch (Exception $e) {
+                        // Use default bankroll
+                    }
+                }
+            }
+            
+            // Get prediction confidence from HuggingFace
+            $predictions = fetchHuggingFacePredictions();
+            $confidence = 65; // Default
+            
+            if ($predictions && isset($predictions['games'])) {
+                foreach ($predictions['games'] as $game) {
+                    if ($game['id'] === $game_id) {
+                        $confidence = (float)($game['prediction']['confidence'] ?? 65);
+                        break;
+                    }
+                }
+            }
+            
+            // Calculate Kelly bet size
+            $kelly_amount = calculateKellyBetSize($confidence, $odds, $bankroll);
+            $kelly_percentage = ($kelly_amount / $bankroll) * 100;
+            
+            respondJson([
+                'kelly_amount' => $kelly_amount,
+                'kelly_percentage' => round($kelly_percentage, 2),
+                'confidence' => $confidence,
+                'bankroll' => $bankroll
+            ]);
+            
+        } catch (Exception $e) {
+            logError('Kelly calculation error: ' . $e->getMessage());
+            respondJson([
+                'kelly_amount' => 0,
+                'kelly_percentage' => 0,
+                'confidence' => 50,
+                'error' => 'Calculation failed'
+            ]);
+        }
     }
     
     // Track bet

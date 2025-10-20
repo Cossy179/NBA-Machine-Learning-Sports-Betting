@@ -10,6 +10,7 @@ Combines multiple boosting algorithms with advanced techniques:
 - Uncertainty quantification
 """
 import os
+import sys
 import sqlite3
 import joblib
 import optuna
@@ -35,6 +36,10 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+# Add src/Utils to path for temporal weights
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Utils'))
+from temporal_weights import calculate_temporal_weights, print_weight_distribution
+
 
 class SuperAdvancedXGBoostTrainer:
     def __init__(self, dataset_name="dataset_2012-24_ultra_enhanced"):
@@ -52,14 +57,14 @@ class SuperAdvancedXGBoostTrainer:
         self.device = os.environ.get('XGB_DEFAULT_DEVICE', 'cpu')
         
     def load_data(self):
-        """Load and prepare data with proper time-based splits"""
+        """Load and prepare data with proper time-based splits and temporal weights"""
         print(f"Loading dataset: {self.dataset_name}")
         con = sqlite3.connect("Data/dataset.sqlite")
         
         # Try ultra-enhanced, fall back to enhanced, then base
         for dataset_attempt in [self.dataset_name, "dataset_2012-24_enhanced", "dataset_2012-24_new"]:
             try:
-                df = pd.read_sql_query(f'select * from "{dataset_attempt}"', con, index_col="index")
+                df = pd.read_sql_query(f'select * from "{dataset_attempt}"', con)
                 print(f"Loaded dataset: {dataset_attempt}")
                 break
             except:
@@ -92,7 +97,18 @@ class SuperAdvancedXGBoostTrainer:
         # Update feature_cols after cleanup
         self.feature_cols = list(X.columns)
         
-        # Time-based splits: Train: 2012-2021, Val: 2022, Test: 2023-2024
+        # Calculate temporal weights (prioritize recent seasons 2021+)
+        temporal_weights = calculate_temporal_weights(
+            df["Date"], 
+            recent_season_start=2021,
+            decay_factor=0.7,
+            normalize=True
+        )
+        
+        # Print weight distribution for debugging
+        print_weight_distribution(df["Date"], temporal_weights)
+        
+        # Time-based splits: Train: 2012-2021, Val: 2022, Test: 2023-2024+
         train_mask = df["Date"] < pd.Timestamp("2022-01-01")
         val_mask = (df["Date"] >= pd.Timestamp("2022-01-01")) & (df["Date"] < pd.Timestamp("2023-01-01"))
         test_mask = df["Date"] >= pd.Timestamp("2023-01-01")
@@ -106,6 +122,9 @@ class SuperAdvancedXGBoostTrainer:
             'X_train': X[train_mask], 'y_train': y[train_mask],
             'X_val': X[val_mask], 'y_val': y[val_mask],
             'X_test': X[test_mask], 'y_test': y[test_mask],
+            'weights_train': temporal_weights[train_mask],
+            'weights_val': temporal_weights[val_mask],
+            'weights_full': temporal_weights,
             'dates': df["Date"],
             'X_full': X, 'y_full': y
         }
@@ -179,8 +198,8 @@ class SuperAdvancedXGBoostTrainer:
         
         return X_train_selected, X_val_selected, self.selected_features
     
-    def optimize_xgboost_dart(self, X_train, y_train, X_val, y_val, n_trials=50):
-        """Optimize XGBoost with DART booster - OPTIMIZED VERSION"""
+    def optimize_xgboost_dart(self, X_train, y_train, X_val, y_val, n_trials=50, weights_train=None, weights_val=None):
+        """Optimize XGBoost with DART booster - OPTIMIZED VERSION with temporal weighting"""
         from tqdm import tqdm
         print("\n⚡ Optimizing XGBoost DART (Fast Mode)...")
         
@@ -209,8 +228,9 @@ class SuperAdvancedXGBoostTrainer:
                 'random_state': 42
             }
             
-            dtrain = xgb.DMatrix(X_train, label=y_train)
-            dval = xgb.DMatrix(X_val, label=y_val)
+            # Create DMatrix with temporal weights
+            dtrain = xgb.DMatrix(X_train, label=y_train, weight=weights_train)
+            dval = xgb.DMatrix(X_val, label=y_val, weight=weights_val)
             
             model = xgb.train(
                 params,
@@ -241,8 +261,8 @@ class SuperAdvancedXGBoostTrainer:
         print(f"✅ Best validation log loss: {study.best_value:.4f}")
         return study.best_params
     
-    def optimize_lightgbm(self, X_train, y_train, X_val, y_val, n_trials=50):
-        """Optimize LightGBM - OPTIMIZED VERSION"""
+    def optimize_lightgbm(self, X_train, y_train, X_val, y_val, n_trials=50, weights_train=None, weights_val=None):
+        """Optimize LightGBM - OPTIMIZED VERSION with temporal weighting"""
         from tqdm import tqdm
         print("\n💡 Optimizing LightGBM (Fast Mode)...")
         
@@ -267,8 +287,9 @@ class SuperAdvancedXGBoostTrainer:
                 'force_col_wise': True  # Faster
             }
             
-            dtrain = lgb.Dataset(X_train, label=y_train)
-            dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
+            # Create Dataset with temporal weights
+            dtrain = lgb.Dataset(X_train, label=y_train, weight=weights_train)
+            dval = lgb.Dataset(X_val, label=y_val, weight=weights_val, reference=dtrain)
             
             model = lgb.train(
                 params,
@@ -298,8 +319,8 @@ class SuperAdvancedXGBoostTrainer:
         print(f"✅ Best validation log loss: {study.best_value:.4f}")
         return study.best_params
     
-    def optimize_catboost(self, X_train, y_train, X_val, y_val, n_trials=50):
-        """Optimize CatBoost - OPTIMIZED VERSION"""
+    def optimize_catboost(self, X_train, y_train, X_val, y_val, n_trials=50, weights_train=None, weights_val=None):
+        """Optimize CatBoost - OPTIMIZED VERSION with temporal weighting"""
         if not CATBOOST_AVAILABLE:
             print("⚠️ CatBoost not available, skipping...")
             return None
@@ -329,6 +350,7 @@ class SuperAdvancedXGBoostTrainer:
             model.fit(
                 X_train, y_train,
                 eval_set=(X_val, y_val),
+                sample_weight=weights_train,
                 verbose=False
             )
             
@@ -386,11 +408,17 @@ class SuperAdvancedXGBoostTrainer:
         # Also get test set with selected features (must maintain same column order as training!)
         X_test_selected = data['X_test'][X_val_selected.columns].copy()
         
-        # Step 3: Train XGBoost DART
+        # Step 3: Train XGBoost DART with temporal weighting
         print("⚡ Step 3/7: Training XGBoost DART...")
         step_start = time.time()
+        
+        # Get corresponding weights for selected features  
+        weights_train_selected = data['weights_train']
+        weights_val_selected = data['weights_val']
+        
         dart_params = self.optimize_xgboost_dart(X_train_selected, data['y_train'], 
-                                                  X_val_selected, data['y_val'], n_trials)
+                                                  X_val_selected, data['y_val'], n_trials,
+                                                  weights_train_selected, weights_val_selected)
         
         dart_params.update({
             'booster': 'dart',
@@ -401,8 +429,8 @@ class SuperAdvancedXGBoostTrainer:
             'random_state': 42
         })
         
-        dtrain = xgb.DMatrix(X_train_selected, label=data['y_train'])
-        dval = xgb.DMatrix(X_val_selected, label=data['y_val'])
+        dtrain = xgb.DMatrix(X_train_selected, label=data['y_train'], weight=weights_train_selected)
+        dval = xgb.DMatrix(X_val_selected, label=data['y_val'], weight=weights_val_selected)
         
         dart_model = xgb.train(
             dart_params,
@@ -417,11 +445,12 @@ class SuperAdvancedXGBoostTrainer:
         step_time = time.time() - step_start
         print(f"✅ XGBoost DART completed in {step_time/60:.1f} minutes\n")
         
-        # Step 4: Train LightGBM
+        # Step 4: Train LightGBM with temporal weighting
         print("💡 Step 4/7: Training LightGBM...")
         step_start = time.time()
         lgb_params = self.optimize_lightgbm(X_train_selected, data['y_train'],
-                                           X_val_selected, data['y_val'], n_trials)
+                                           X_val_selected, data['y_val'], n_trials,
+                                           weights_train_selected, weights_val_selected)
         
         lgb_params.update({
             'objective': 'binary',
@@ -432,8 +461,8 @@ class SuperAdvancedXGBoostTrainer:
             'random_state': 42
         })
         
-        dtrain_lgb = lgb.Dataset(X_train_selected, label=data['y_train'])
-        dval_lgb = lgb.Dataset(X_val_selected, label=data['y_val'], reference=dtrain_lgb)
+        dtrain_lgb = lgb.Dataset(X_train_selected, label=data['y_train'], weight=weights_train_selected)
+        dval_lgb = lgb.Dataset(X_val_selected, label=data['y_val'], weight=weights_val_selected, reference=dtrain_lgb)
         
         lgb_model = lgb.train(
             lgb_params,
@@ -447,12 +476,13 @@ class SuperAdvancedXGBoostTrainer:
         step_time = time.time() - step_start
         print(f"✅ LightGBM completed in {step_time/60:.1f} minutes\n")
         
-        # Step 5: Train CatBoost (if available)
+        # Step 5: Train CatBoost (if available) with temporal weighting
         if CATBOOST_AVAILABLE:
             print("🐱 Step 5/7: Training CatBoost...")
             step_start = time.time()
             cb_params = self.optimize_catboost(X_train_selected, data['y_train'],
-                                              X_val_selected, data['y_val'], n_trials)
+                                              X_val_selected, data['y_val'], n_trials,
+                                              weights_train_selected, weights_val_selected)
             
             if cb_params:
                 cb_params.update({
@@ -469,6 +499,7 @@ class SuperAdvancedXGBoostTrainer:
                 cb_model.fit(
                     X_train_selected, data['y_train'],
                     eval_set=(X_val_selected, data['y_val']),
+                    sample_weight=weights_train_selected,
                     verbose=50
                 )
                 

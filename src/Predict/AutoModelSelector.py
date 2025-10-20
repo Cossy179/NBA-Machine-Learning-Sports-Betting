@@ -37,9 +37,9 @@ class AutoModelSelector:
                     'metadata': metadata,
                     'confidence': 0.95  # Highest confidence - most advanced system
                 }
-                print("✓ Boosted System found")
+                print("[OK] Boosted System found")
             except Exception as e:
-                print(f"✗ Boosted System error: {e}")
+                print(f"[ERROR] Boosted System error: {e}")
         
         # Check for Ensemble System
         if os.path.exists('Models/Ensemble_Models/Ensemble_NBA_v1_features.pkl'):
@@ -50,9 +50,9 @@ class AutoModelSelector:
                     'features': features,
                     'confidence': 0.85
                 }
-                print("✓ Ensemble System found")
+                print("[OK] Ensemble System found")
             except Exception as e:
-                print(f"✗ Ensemble System error: {e}")
+                print(f"[ERROR] Ensemble System error: {e}")
         
         # Check for Multi-Target Models
         if os.path.exists('Models/XGBoost_Models/MultiTarget_NBA_v1_metadata.pkl'):
@@ -63,9 +63,9 @@ class AutoModelSelector:
                     'metadata': metadata,
                     'confidence': 0.80
                 }
-                print("✓ Multi-Target System found")
+                print("[OK] Multi-Target System found")
             except Exception as e:
-                print(f"✗ Multi-Target System error: {e}")
+                print(f"[ERROR] Multi-Target System error: {e}")
         
         # Check for Advanced XGBoost
         if os.path.exists('Models/XGBoost_Models/XGB_ML_Advanced_v1.json'):
@@ -73,7 +73,7 @@ class AutoModelSelector:
                 'type': 'single_model',
                 'confidence': 0.75
             }
-            print("✓ Advanced XGBoost found")
+            print("[OK] Advanced XGBoost found")
         
         # Check for LightGBM (BEST performance: 839% ROI!)
         if os.path.exists('Models/XGBoost_Models/SuperAdvanced_XGB_v1_lightgbm.txt'):
@@ -81,7 +81,7 @@ class AutoModelSelector:
                 'type': 'lightgbm',
                 'confidence': 0.95  # HIGHEST - Best backtest performance
             }
-            print("✓ LightGBM found (BEST: 839% ROI)")
+            print("[OK] LightGBM found (BEST: 839% ROI)")
         
         # Check for Original XGBoost (actually performs best in our tests!)
         if os.path.exists('Models/XGBoost_Models/XGBoost_68.7%_ML-4.json'):
@@ -89,7 +89,7 @@ class AutoModelSelector:
                 'type': 'original',
                 'confidence': 0.90  # Increased based on actual performance
             }
-            print("✓ Original XGBoost found (high performance)")
+            print("[OK] Original XGBoost found (high performance)")
         
         print(f"Found {len(self.available_models)} available model systems")
         return self.available_models
@@ -569,15 +569,16 @@ class AutoModelSelector:
             except:
                 calibrator = None
             
-            # Prepare features
+            # Prepare features - handle DataFrame properly
             if isinstance(game_features, pd.DataFrame):
-                numeric_cols = game_features.select_dtypes(include=[np.number]).columns
-                X = game_features[numeric_cols].fillna(0).values.reshape(1, -1)
+                # Use the DataFrame directly with XGBoost DMatrix
+                dtest = xgb.DMatrix(game_features)
             else:
+                # Convert numpy array to DataFrame if needed
                 X = np.array(game_features).reshape(1, -1)
+                dtest = xgb.DMatrix(X)
             
             # Make prediction
-            dtest = xgb.DMatrix(X)
             prob_uncal = model.predict(dtest)[0]
             
             # Apply calibration if available

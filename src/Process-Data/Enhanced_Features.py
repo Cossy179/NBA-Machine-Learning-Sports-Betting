@@ -673,7 +673,7 @@ class EnhancedFeatureEngine:
         """Add all enhanced features to the existing dataset"""
         # Load existing dataset
         con = sqlite3.connect(dataset_path)
-        df = pd.read_sql_query(f'select * from "{table_name}"', con, index_col="index")
+        df = pd.read_sql_query(f'select * from "{table_name}"', con)
         con.close()
         
         # Parse dates

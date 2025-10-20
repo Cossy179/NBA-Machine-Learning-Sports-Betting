@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class MultiTargetNBAPredictor:
-    def __init__(self, dataset_name="dataset_2012-24_enhanced"):
+    def __init__(self, dataset_name="dataset_2012-25_enhanced"):
         self.dataset_name = dataset_name
         self.models = {}
         self.feature_cols = None
@@ -29,7 +29,7 @@ class MultiTargetNBAPredictor:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (self.dataset_name,))
         if not cursor.fetchone():
             print(f"Enhanced dataset {self.dataset_name} not found. Using base dataset.")
-            self.dataset_name = "dataset_2012-24_new"
+            self.dataset_name = "dataset_2012-25_new"
             
         df = pd.read_sql_query(f'select * from "{self.dataset_name}"', con, index_col="index")
         con.close()

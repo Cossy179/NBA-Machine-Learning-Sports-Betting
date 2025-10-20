@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class NBAGraphNeuralNetwork:
-    def __init__(self, dataset_name="dataset_2012-24_enhanced"):
+    def __init__(self, dataset_name="dataset_2012-25_enhanced"):
         self.dataset_name = dataset_name
         self.model = None
         self.scaler = None
@@ -32,7 +32,7 @@ class NBAGraphNeuralNetwork:
         cursor = con.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (self.dataset_name,))
         if not cursor.fetchone():
-            self.dataset_name = "dataset_2012-24_new"
+            self.dataset_name = "dataset_2012-25_new"
             print(f"Using base dataset: {self.dataset_name}")
         else:
             print(f"Using enhanced dataset: {self.dataset_name}")

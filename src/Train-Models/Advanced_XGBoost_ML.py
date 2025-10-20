@@ -2,6 +2,8 @@
 Advanced XGBoost training with proper time splits, hyperparameter optimization,
 and probability calibration for maximum accuracy.
 """
+import sys
+import os
 import sqlite3
 import joblib
 import optuna
@@ -15,6 +17,10 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+# Add src/Utils to path for temporal weights
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Utils'))
+from temporal_weights import calculate_temporal_weights, print_weight_distribution
+
 class AdvancedXGBoostTrainer:
     def __init__(self, dataset_name="dataset_2012-24_new"):
         self.dataset_name = dataset_name
@@ -23,9 +29,9 @@ class AdvancedXGBoostTrainer:
         self.calibrator = None
         
     def load_data(self):
-        """Load and prepare data with proper time-based splits"""
+        """Load and prepare data with proper time-based splits and temporal weights"""
         con = sqlite3.connect("Data/dataset.sqlite")
-        df = pd.read_sql_query(f'select * from "{self.dataset_name}"', con, index_col="index")
+        df = pd.read_sql_query(f'select * from "{self.dataset_name}"', con)
         con.close()
         
         # Parse dates for time-based splitting
@@ -40,8 +46,19 @@ class AdvancedXGBoostTrainer:
         self.feature_cols = [c for c in df.columns if c not in exclude_cols]
         X = df[self.feature_cols].astype(float)
         
+        # Calculate temporal weights (prioritize recent seasons 2021+)
+        temporal_weights = calculate_temporal_weights(
+            df["Date"], 
+            recent_season_start=2021,
+            decay_factor=0.7,
+            normalize=True
+        )
+        
+        # Print weight distribution for debugging
+        print_weight_distribution(df["Date"], temporal_weights)
+        
         # Time-based splits
-        # Train: 2012-2021, Val: 2022, Test: 2023-2024
+        # Train: 2012-2021, Val: 2022, Test: 2023-2024+
         train_mask = df["Date"] < pd.Timestamp("2022-01-01")
         val_mask = (df["Date"] >= pd.Timestamp("2022-01-01")) & (df["Date"] < pd.Timestamp("2023-01-01"))
         test_mask = df["Date"] >= pd.Timestamp("2023-01-01")
@@ -50,11 +67,13 @@ class AdvancedXGBoostTrainer:
             'X_train': X[train_mask], 'y_train': y[train_mask],
             'X_val': X[val_mask], 'y_val': y[val_mask],
             'X_test': X[test_mask], 'y_test': y[test_mask],
+            'weights_train': temporal_weights[train_mask],
+            'weights_val': temporal_weights[val_mask],
             'dates': df["Date"]
         }
     
-    def objective(self, trial, X_train, y_train, X_val, y_val):
-        """Optuna objective function for hyperparameter optimization"""
+    def objective(self, trial, X_train, y_train, X_val, y_val, weights_train=None, weights_val=None):
+        """Optuna objective function for hyperparameter optimization with temporal weighting"""
         params = {
             'objective': 'binary:logistic',
             'eval_metric': 'logloss',
@@ -70,8 +89,9 @@ class AdvancedXGBoostTrainer:
             'random_state': 42
         }
         
-        dtrain = xgb.DMatrix(X_train, label=y_train)
-        dval = xgb.DMatrix(X_val, label=y_val)
+        # Create DMatrix with temporal weights
+        dtrain = xgb.DMatrix(X_train, label=y_train, weight=weights_train)
+        dval = xgb.DMatrix(X_val, label=y_val, weight=weights_val)
         
         model = xgb.train(
             params,
@@ -87,7 +107,7 @@ class AdvancedXGBoostTrainer:
         return log_loss(y_val, y_pred_proba)
     
     def train_optimized_model(self, n_trials=100):
-        """Train model with hyperparameter optimization"""
+        """Train model with hyperparameter optimization and temporal weighting"""
         print("Loading data...")
         data = self.load_data()
         
@@ -95,17 +115,22 @@ class AdvancedXGBoostTrainer:
         print(f"Validation set: {len(data['X_val'])} samples") 
         print(f"Test set: {len(data['X_test'])} samples")
         
-        print("Optimizing hyperparameters...")
+        print("Optimizing hyperparameters with temporal weighting...")
         study = optuna.create_study(direction='minimize')
         study.optimize(
-            lambda trial: self.objective(trial, data['X_train'], data['y_train'], data['X_val'], data['y_val']),
+            lambda trial: self.objective(
+                trial, 
+                data['X_train'], data['y_train'], 
+                data['X_val'], data['y_val'],
+                data['weights_train'], data['weights_val']
+            ),
             n_trials=n_trials
         )
         
         print(f"Best validation log loss: {study.best_value:.4f}")
         print(f"Best parameters: {study.best_params}")
         
-        # Train final model with best parameters
+        # Train final model with best parameters and temporal weights
         best_params = study.best_params
         best_params.update({
             'objective': 'binary:logistic',
@@ -114,8 +139,8 @@ class AdvancedXGBoostTrainer:
             'random_state': 42
         })
         
-        dtrain = xgb.DMatrix(data['X_train'], label=data['y_train'])
-        dval = xgb.DMatrix(data['X_val'], label=data['y_val'])
+        dtrain = xgb.DMatrix(data['X_train'], label=data['y_train'], weight=data['weights_train'])
+        dval = xgb.DMatrix(data['X_val'], label=data['y_val'], weight=data['weights_val'])
         dtest = xgb.DMatrix(data['X_test'], label=data['y_test'])
         
         self.best_model = xgb.train(

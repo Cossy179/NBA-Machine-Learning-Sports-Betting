@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class BayesianNBAPredictor:
-    def __init__(self, dataset_name="dataset_2012-24_enhanced"):
+    def __init__(self, dataset_name="dataset_2012-25_enhanced"):
         self.dataset_name = dataset_name
         self.model = None
         self.scaler = None
@@ -31,7 +31,7 @@ class BayesianNBAPredictor:
         cursor = con.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (self.dataset_name,))
         if not cursor.fetchone():
-            self.dataset_name = "dataset_2012-24_new"
+            self.dataset_name = "dataset_2012-25_new"
             
         df = pd.read_sql_query(f'select * from "{self.dataset_name}"', con, index_col="index")
         con.close()

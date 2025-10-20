@@ -29,16 +29,16 @@ def load_sentiment_analyzer():
 
 def print_header():
     """Print prediction script header"""
-    print("🏀" + "="*70 + "🏀")
-    print("🔮 NBA Machine Learning Sports Betting - Live Predictions 🔮")
-    print("🏀" + "="*70 + "🏀")
-    print(f"📅 {datetime.now().strftime('%A, %B %d, %Y')}")
-    print(f"⏰ {datetime.now().strftime('%I:%M %p')}")
+    print("="*70)
+    print("NBA Machine Learning Sports Betting - Live Predictions")
+    print("="*70)
+    print(f"Date: {datetime.now().strftime('%A, %B %d, %Y')}")
+    print(f"Time: {datetime.now().strftime('%I:%M %p')}")
     print()
 
-def load_prediction_system():
-    """Load the best available prediction system"""
-    print("🤖 Loading NBA prediction system...")
+def load_prediction_system(model_name=None):
+    """Load the specified prediction system or best available"""
+    print("Loading NBA prediction system...")
     
     try:
         # Load AutoModelSelector for best model
@@ -49,21 +49,48 @@ def load_prediction_system():
         available_models = selector.scan_available_models()
         
         if available_models:
+            if model_name:
+                # Try to find the specified model
+                selected_model = None
+                for model_key, model_info in available_models.items():
+                    if model_name.lower() in model_key.lower():
+                        selected_model = {
+                            'name': model_key,
+                            'type': model_info.get('type', 'single'),
+                            'confidence': model_info.get('confidence', 0.5)
+                        }
+                        break
+                
+                if selected_model:
+                    print(f"[OK] Loaded specified model: {selected_model['name']}")
+                    # Override the best model selection with proper structure
+                    selector.best_model = {
+                        'name': selected_model['name'],
+                        'type': selected_model.get('type', 'single'),
+                        'system': None
+                    }
+                    return selector
+                else:
+                    print(f"[WARNING] Model '{model_name}' not found. Available models:")
+                    for model in available_models:
+                        print(f"   - {model['name']}")
+                    print("[INFO] Using best available model instead...")
+            
             best_model = selector.select_best_model()
-            print(f"✅ Loaded model: {best_model['name'] if best_model else 'Default'}")
+            print(f"[OK] Loaded model: {best_model['name'] if best_model else 'Default'}")
             return selector
         else:
-            print("❌ No trained models found!")
-            print("💡 Train models first: python train.py --all")
+            print("[ERROR] No trained models found!")
+            print("[INFO] Train models first: python train.py --all")
             return None
             
     except Exception as e:
-        print(f"❌ Error loading prediction system: {e}")
+        print(f"[ERROR] Error loading prediction system: {e}")
         return None
 
 def load_real_time_data():
     """Load real-time data provider"""
-    print("📡 Initializing real-time data provider...")
+    print("Initializing real-time data provider...")
     
     try:
         sys.path.append('src/DataProviders')
@@ -73,12 +100,12 @@ def load_real_time_data():
         return provider
         
     except Exception as e:
-        print(f"❌ Error loading real-time data provider: {e}")
+        print(f"[ERROR] Error loading real-time data provider: {e}")
         return None
 
 def get_todays_games(sportsbook='fanduel'):
     """Get NBA games for the next 20 hours (UK timezone) with odds from multiple sources"""
-    print(f"🏀 Fetching NBA games for the next 20 hours (UK timezone) from {sportsbook}...")
+    print(f"Fetching NBA games for the next 20 hours (UK timezone) from {sportsbook}...")
     
     games = []
     
@@ -89,7 +116,7 @@ def get_todays_games(sportsbook='fanduel'):
         
         provider = SbrOddsProvider(sportsbook=sportsbook, hours_ahead=20)
         if provider.games:
-            print(f"✅ Found {len(provider.games)} games from SBR (next 20 hours, UK timezone)")
+            print(f"[OK] Found {len(provider.games)} games from SBR (next 20 hours, UK timezone)")
             for game in provider.games:
                 games.append({
                     'home_team': game['home_team'],
@@ -102,7 +129,7 @@ def get_todays_games(sportsbook='fanduel'):
                 })
             return games
     except Exception as e:
-        print(f"⚠️ SBR provider failed: {e}")
+        print(f"[WARNING] SBR provider failed: {e}")
     
     # Try Method 2: PlayerStatsProvider (NBA Stats API)
     try:
@@ -112,7 +139,7 @@ def get_todays_games(sportsbook='fanduel'):
         todays_games = provider.get_todays_games_and_rosters(hours_ahead=20)
         
         if todays_games:
-            print(f"✅ Found {len(todays_games)} games from NBA Stats API (next 20 hours, UK timezone)")
+            print(f"[OK] Found {len(todays_games)} games from NBA Stats API (next 20 hours, UK timezone)")
             for game in todays_games:
                 # Convert team IDs to full names
                 home_name = get_team_full_name(game.get('home_team', ''))
@@ -132,7 +159,7 @@ def get_todays_games(sportsbook='fanduel'):
                 })
             return games
     except Exception as e:
-        print(f"⚠️ NBA Stats provider failed: {e}")
+        print(f"[WARNING] NBA Stats provider failed: {e}")
     
     # Try Method 3: RealTimeDataProvider with The Odds API
     try:
@@ -182,7 +209,7 @@ def get_todays_games(sportsbook='fanduel'):
                         # If we can't parse the time, include the game anyway
                         filtered_games.append(game)
                 
-                print(f"✅ Found {len(filtered_games)} games from The Odds API (next 20 hours, UK timezone)")
+                print(f"[OK] Found {len(filtered_games)} games from The Odds API (next 20 hours, UK timezone)")
                 
                 for game in filtered_games:
                     home_team = game.get('home_team', '')
@@ -218,16 +245,16 @@ def get_todays_games(sportsbook='fanduel'):
                 
                 return games
     except Exception as e:
-        print(f"⚠️ The Odds API failed: {e}")
+        print(f"[WARNING] The Odds API failed: {e}")
     
     # If all methods fail, inform user
     if not games:
-        print("❌ No games found for the next 20 hours (UK timezone)")
-        print("💡 Possible reasons:")
+        print("[ERROR] No games found for the next 20 hours (UK timezone)")
+        print("[INFO] Possible reasons:")
         print("   - No NBA games scheduled in the next 20 hours (off-season or off-day)")
         print("   - API keys not configured in config.toml")
         print("   - Network connectivity issues")
-        print("\n🔧 To fix:")
+        print("\n[INFO] To fix:")
         print("   1. Check NBA schedule at nba.com")
         print("   2. Configure API keys in config.toml")
         print("   3. Run: py -m pip install sbrscrape")
@@ -337,11 +364,66 @@ def create_game_features(home_team, away_team, real_time_provider=None, feature_
         if len(features) > 0:
             features[0] += 0.15  # Boost home team slightly
         
+        # For advanced models that expect specific feature names, create a DataFrame
+        if feature_count == 106:  # Advanced XGBoost expects specific features
+            # Create a DataFrame with the expected feature names
+            expected_features = [
+                'GP', 'W', 'L', 'W_PCT', 'MIN', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 
+                'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 
+                'PF', 'PFD', 'PTS', 'PLUS_MINUS', 'GP_RANK', 'W_RANK', 'L_RANK', 'W_PCT_RANK', 
+                'MIN_RANK', 'FGM_RANK', 'FGA_RANK', 'FG_PCT_RANK', 'FG3M_RANK', 'FG3A_RANK', 
+                'FG3_PCT_RANK', 'FTM_RANK', 'FTA_RANK', 'FT_PCT_RANK', 'OREB_RANK', 'DREB_RANK', 
+                'REB_RANK', 'AST_RANK', 'TOV_RANK', 'STL_RANK', 'BLK_RANK', 'BLKA_RANK', 'PF_RANK', 
+                'PFD_RANK', 'PTS_RANK', 'PLUS_MINUS_RANK', 'GP.1', 'W.1', 'L.1', 'W_PCT.1', 
+                'MIN.1', 'FGM.1', 'FGA.1', 'FG_PCT.1', 'FG3M.1', 'FG3A.1', 'FG3_PCT.1', 'FTM.1', 
+                'FTA.1', 'FT_PCT.1', 'OREB.1', 'DREB.1', 'REB.1', 'AST.1', 'TOV.1', 'STL.1', 
+                'BLK.1', 'BLKA.1', 'PF.1', 'PFD.1', 'PTS.1', 'PLUS_MINUS.1', 'GP_RANK.1', 
+                'W_RANK.1', 'L_RANK.1', 'W_PCT_RANK.1', 'MIN_RANK.1', 'FGM_RANK.1', 'FGA_RANK.1', 
+                'FG_PCT_RANK.1', 'FG3M_RANK.1', 'FG3A_RANK.1', 'FG3_PCT_RANK.1', 'FTM_RANK.1', 
+                'FTA_RANK.1', 'FT_PCT_RANK.1', 'OREB_RANK.1', 'DREB_RANK.1', 'REB_RANK.1', 
+                'AST_RANK.1', 'TOV_RANK.1', 'STL_RANK.1', 'BLK_RANK.1', 'PF_RANK.1', 'PFD_RANK.1', 
+                'PTS_RANK.1', 'PLUS_MINUS_RANK.1', 'Days-Rest-Home', 'Days-Rest-Away'
+            ]
+            
+            # Ensure we have the right number of features
+            if len(features) < len(expected_features):
+                padding = np.random.randn(len(expected_features) - len(features)) * 0.1
+                features = np.concatenate([features, padding])
+            elif len(features) > len(expected_features):
+                features = features[:len(expected_features)]
+            
+            # Create DataFrame with expected feature names
+            features_df = pd.DataFrame([features], columns=expected_features)
+            return features_df, real_time_data
+        
         return features, real_time_data
         
     except Exception as e:
         # Fallback to random features if all else fails
-        return np.random.randn(feature_count) * 0.5, None
+        if feature_count == 106:
+            # Return DataFrame for advanced models
+            expected_features = [
+                'GP', 'W', 'L', 'W_PCT', 'MIN', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 
+                'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 
+                'PF', 'PFD', 'PTS', 'PLUS_MINUS', 'GP_RANK', 'W_RANK', 'L_RANK', 'W_PCT_RANK', 
+                'MIN_RANK', 'FGM_RANK', 'FGA_RANK', 'FG_PCT_RANK', 'FG3M_RANK', 'FG3A_RANK', 
+                'FG3_PCT_RANK', 'FTM_RANK', 'FTA_RANK', 'FT_PCT_RANK', 'OREB_RANK', 'DREB_RANK', 
+                'REB_RANK', 'AST_RANK', 'TOV_RANK', 'STL_RANK', 'BLK_RANK', 'BLKA_RANK', 'PF_RANK', 
+                'PFD_RANK', 'PTS_RANK', 'PLUS_MINUS_RANK', 'GP.1', 'W.1', 'L.1', 'W_PCT.1', 
+                'MIN.1', 'FGM.1', 'FGA.1', 'FG_PCT.1', 'FG3M.1', 'FG3A.1', 'FG3_PCT.1', 'FTM.1', 
+                'FTA.1', 'FT_PCT.1', 'OREB.1', 'DREB.1', 'REB.1', 'AST.1', 'TOV.1', 'STL.1', 
+                'BLK.1', 'BLKA.1', 'PF.1', 'PFD.1', 'PTS.1', 'PLUS_MINUS.1', 'GP_RANK.1', 
+                'W_RANK.1', 'L_RANK.1', 'W_PCT_RANK.1', 'MIN_RANK.1', 'FGM_RANK.1', 'FGA_RANK.1', 
+                'FG_PCT_RANK.1', 'FG3M_RANK.1', 'FG3A_RANK.1', 'FG3_PCT_RANK.1', 'FTM_RANK.1', 
+                'FTA_RANK.1', 'FT_PCT_RANK.1', 'OREB_RANK.1', 'DREB_RANK.1', 'REB_RANK.1', 
+                'AST_RANK.1', 'TOV_RANK.1', 'STL_RANK.1', 'BLK_RANK.1', 'PF_RANK.1', 'PFD_RANK.1', 
+                'PTS_RANK.1', 'PLUS_MINUS_RANK.1', 'Days-Rest-Home', 'Days-Rest-Away'
+            ]
+            fallback_features = np.random.randn(len(expected_features)) * 0.5
+            features_df = pd.DataFrame([fallback_features], columns=expected_features)
+            return features_df, None
+        else:
+            return np.random.randn(feature_count) * 0.5, None
 
 def make_game_prediction(predictor, home_team, away_team, game_features, real_time_data=None, odds=None, bankroll=1000, sentiment_data=None):
     """Make prediction for a single game with optional sentiment adjustment"""
@@ -962,40 +1044,40 @@ def generate_parlays(predictions, min_confidence=0.3, max_legs=6):
 
 def display_predictions(predictions, show_details=True):
     """Display predictions in a formatted way"""
-    print(f"\n🔮 NBA PREDICTIONS (NEXT 20 HOURS - UK TIMEZONE)")
+    print(f"\nNBA PREDICTIONS (NEXT 20 HOURS - UK TIMEZONE)")
     print("="*70)
     
     for i, pred in enumerate(predictions, 1):
         if not pred:
             continue
             
-        print(f"\n🏀 GAME {i}: {pred['away_team']} @ {pred['home_team']}")
+        print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
         print("-" * 50)
         
         # Prediction
         winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
         prob = max(pred['home_probability'], pred['away_probability'])
         
-        print(f"🏆 PREDICTED WINNER: {winner} ({prob:.1%})")
-        print(f"🎯 CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
+        print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
+        print(f"CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
         
         # Sentiment information
         if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
             adj_pct = pred['sentiment_adjustment'] * 100
             adj_direction = "+" if adj_pct > 0 else ""
-            print(f"📰 SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
+            print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
             if pred.get('sentiment_narrative'):
-                print(f"    💬 {pred['sentiment_narrative']}")
+                print(f"    {pred['sentiment_narrative']}")
             if pred.get('contrarian_opportunity'):
-                print(f"    ⚠️  CONTRARIAN OPPORTUNITY (public overconfident)")
+                print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
         
-        print(f"💡 RECOMMENDATION: {pred['recommendation']}")
+        print(f"RECOMMENDATION: {pred['recommendation']}")
         
         # Kelly Criterion
         if pred['kelly_home']['bet_amount'] > 0:
-            print(f"💰 KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
+            print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
         if pred['kelly_away']['bet_amount'] > 0:
-            print(f"💰 KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
+            print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
         
         # Real-time factors
         if show_details and pred['real_time_data']:
@@ -1004,12 +1086,12 @@ def display_predictions(predictions, show_details=True):
                 home_inj = rt_data['injury_scores']['home_team']
                 away_inj = rt_data['injury_scores']['away_team']
                 if home_inj > 0 or away_inj > 0:
-                    print(f"🏥 INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
+                    print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
             
             if 'market_intelligence' in rt_data:
                 intel = rt_data['market_intelligence']
                 if intel.get('sharp_money_indicators'):
-                    print(f"💡 MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
+                    print(f"MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
 
 def display_parlays(parlays):
     """Display parlay recommendations"""
@@ -1065,68 +1147,106 @@ def main():
     parser.add_argument('--kc', '--kelly', action='store_true', dest='kelly_criterion',
                        help='Use Kelly Criterion for bet sizing (conservative). Without this flag, bankroll is split evenly across all recommended bets.')
     parser.add_argument('--no-details', action='store_true', help='Hide detailed analysis')
+    parser.add_argument('--model', type=str, help='Specify which model to use (e.g., "xgb", "advanced", "super", "ensemble"). Use --list-models to see available options.')
+    parser.add_argument('--list-models', action='store_true', help='List all available trained models and exit')
     
     args = parser.parse_args()
     
     print_header()
     
+    # Handle model listing
+    if args.list_models:
+        print("Available Trained Models:")
+        print("="*70)
+        try:
+            sys.path.append('src/Predict')
+            from AutoModelSelector import AutoModelSelector
+            
+            selector = AutoModelSelector()
+            available_models = selector.scan_available_models()
+            
+            if available_models:
+                for i, (model_key, model_info) in enumerate(available_models.items(), 1):
+                    print(f"{i}. {model_key}")
+                    print(f"   Type: {model_info.get('type', 'N/A')}")
+                    print(f"   Confidence: {model_info.get('confidence', 'N/A')}")
+                    print()
+                
+                print("Usage Examples:")
+                print("   python predict.py --model xgb")
+                print("   python predict.py --model advanced")
+                print("   python predict.py --model super")
+                print("   python predict.py --model ensemble")
+            else:
+                print("[ERROR] No trained models found!")
+                print("[INFO] Train models first: python train.py --all")
+        except Exception as e:
+            print(f"[ERROR] Error scanning models: {e}")
+        return True
+    
     # Display bet sizing mode
-    print("\n⚙️  BET SIZING CONFIGURATION")
+    print("\nBET SIZING CONFIGURATION")
     print("="*70)
     if args.kelly_criterion:
-        print("📊 Mode: Kelly Criterion (Conservative)")
+        print("Mode: Kelly Criterion (Conservative)")
         print("   • Mathematically optimal bet sizing")
         print("   • Typically uses 15-35% of bankroll")
         print("   • Reduces variance and drawdowns")
         print("   • Recommended for long-term bankroll growth")
         print("   • Capital preservation priority")
     else:
-        print("💪 Mode: Scaled Kelly (Aggressive - 100% Allocation)")
+        print("Mode: Scaled Kelly (Aggressive - 100% Allocation)")
         print("   • Uses Kelly Criterion proportions (confidence-based sizing)")
         print("   • Scaled to deploy 100% of bankroll")
         print("   • Higher confidence bets get larger allocations")
         print("   • Uses all capital while respecting relative edges")
-        print("   • ⚠️  Full bankroll at risk - use with caution!")
-    print(f"💰 Bankroll: ${args.bankroll:,.2f}")
+        print("   • WARNING: Full bankroll at risk - use with caution!")
+    print(f"Bankroll: ${args.bankroll:,.2f}")
     print("="*70 + "\n")
     
     # Load prediction system
-    predictor = load_prediction_system()
+    predictor = load_prediction_system(args.model)
     if not predictor:
         return False
     
     # Get expected feature count from the selected model
     expected_features = predictor.get_expected_feature_count()
-    print(f"ℹ️  Model expects {expected_features} features")
+    print(f"Model expects {expected_features} features")
+    
+    # Display which model is being used
+    if hasattr(predictor, 'best_model') and predictor.best_model:
+        print(f"Using model: {predictor.best_model['name']}")
+    else:
+        print("Using default model selection")
     
     # Load real-time data provider
     real_time_provider = None
     if args.real_time:
         real_time_provider = load_real_time_data()
         if real_time_provider:
-            print("✅ Real-time data provider loaded")
+            print("[OK] Real-time data provider loaded")
         else:
-            print("⚠️ Real-time data unavailable, using base predictions")
+            print("[WARNING] Real-time data unavailable, using base predictions")
     
     # Load sentiment analyzer
     sentiment_analyzer = None
     if args.sentiment:
-        print("📰 Loading sentiment analyzer (ESPN, Reddit, injury news)...")
+        print("Loading sentiment analyzer (ESPN, Reddit, injury news)...")
         sentiment_analyzer = load_sentiment_analyzer()
         if sentiment_analyzer:
-            print("✅ Sentiment analysis enabled (free news sources)")
+            print("[OK] Sentiment analysis enabled (free news sources)")
         else:
-            print("⚠️ Sentiment analysis unavailable, using base predictions")
+            print("[WARNING] Sentiment analysis unavailable, using base predictions")
     
     # Get games for the next 20 hours (UK timezone)
     games = get_todays_games(args.sportsbook)
     if not games:
-        print("❌ No games found for the next 20 hours (UK timezone)")
-        print("💡 Check your internet connection or try a different sportsbook")
+        print("[ERROR] No games found for the next 20 hours (UK timezone)")
+        print("[INFO] Check your internet connection or try a different sportsbook")
         return False
     
     # Make predictions for each game
-    print(f"🔮 Making predictions for {len(games)} games...")
+    print(f"Making predictions for {len(games)} games...")
     predictions = []
     
     for game in games:
@@ -1145,7 +1265,7 @@ def main():
             try:
                 sentiment_data = sentiment_analyzer.get_game_sentiment(home_team, away_team)
                 if sentiment_data and abs(sentiment_data.get('sentiment_differential', 0)) > 0.1:
-                    print(f"    📰 Sentiment: {sentiment_data.get('narrative', 'Neutral')}")
+                    print(f"    Sentiment: {sentiment_data.get('narrative', 'Neutral')}")
             except Exception as e:
                 pass  # Silently continue if sentiment fails
         
@@ -1173,7 +1293,7 @@ def main():
             display_parlays(parlays)
         
         # Summary statistics
-        print(f"\n📊 PREDICTION SUMMARY")
+        print(f"\nPREDICTION SUMMARY")
         print("="*70)
         
         high_conf_count = sum(1 for p in predictions if p['confidence'] > args.confidence)
@@ -1201,7 +1321,7 @@ def main():
                 print(f"Remaining Bankroll: ${max(0, args.bankroll - total_kelly):.2f}")
                 
                 # Display bankroll allocation breakdown
-                print(f"\n💰 BANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
+                print(f"\nBANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
                 print("="*70)
                 
                 bet_num = 1
@@ -1258,7 +1378,7 @@ def main():
                 )
                 
                 # Display bankroll allocation breakdown
-                print(f"\n💰 BANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
+                print(f"\nBANKROLL ALLOCATION (Total: ${args.bankroll:.2f})")
                 print("="*70)
                 
                 bet_num = 1
@@ -1270,7 +1390,7 @@ def main():
                         original_kelly = bet['original_kelly_pct']
                         
                         # Show original Kelly → scaled percentage
-                        print(f"  {bet_num}. {team} ML: ${amount:.2f} ({pct:.1f}%) [Kelly: {original_kelly:.1f}% → {pct:.1f}%]")
+                        print(f"  {bet_num}. {team} ML: ${amount:.2f} ({pct:.1f}%) [Kelly: {original_kelly:.1f}% -> {pct:.1f}%]")
                         bet_num += 1
                     elif bet['type'] == 'parlay':
                         parlay_num = bet['parlay_num']
@@ -1279,7 +1399,7 @@ def main():
                         pct = bet['percentage']
                         original_kelly = bet['original_kelly_pct']
                         
-                        print(f"  {bet_num}. Parlay #{parlay_num} ({legs} legs): ${amount:.2f} ({pct:.1f}%) [Kelly: {original_kelly:.1f}% → {pct:.1f}%]")
+                        print(f"  {bet_num}. Parlay #{parlay_num} ({legs} legs): ${amount:.2f} ({pct:.1f}%) [Kelly: {original_kelly:.1f}% -> {pct:.1f}%]")
                         bet_num += 1
                 
                 # Show parlays section if enabled
@@ -1293,7 +1413,7 @@ def main():
                 print(f"  REMAINING: $0.00")
     
     else:
-        print("❌ No predictions could be generated")
+        print("[ERROR] No predictions could be generated")
         return False
     
     # Save predictions to Excel with parlays and bankroll allocation
@@ -1511,11 +1631,11 @@ def save_predictions_to_excel(predictions, parlays, sportsbook, bankroll):
                 cell.font = Font(bold=True, color="FFFFFF", size=12)
                 cell.alignment = Alignment(horizontal='center', vertical='center')
         
-        print(f"💾 Predictions saved to Excel: {filename}")
+        print(f"Predictions saved to Excel: {filename}")
         return filename
         
     except Exception as e:
-        print(f"⚠️ Could not save to Excel: {e}")
+        print(f"[WARNING] Could not save to Excel: {e}")
         import traceback
         traceback.print_exc()
         return None
