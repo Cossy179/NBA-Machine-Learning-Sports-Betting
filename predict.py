@@ -103,20 +103,22 @@ def load_real_time_data():
         print(f"[ERROR] Error loading real-time data provider: {e}")
         return None
 
-def get_todays_games(sportsbook='fanduel'):
-    """Get NBA games for the next 20 hours (UK timezone) with odds from multiple sources"""
-    print(f"Fetching NBA games for the next 20 hours (UK timezone) from {sportsbook}...")
+def get_todays_games(sportsbook='fanduel', week_mode=False):
+    """Get NBA games for the next 20 hours (UK timezone) or next 7 days with odds from multiple sources"""
+    time_range = "next 7 days" if week_mode else "next 20 hours"
+    print(f"Fetching NBA games for the {time_range} (UK timezone) from {sportsbook}...")
     
     games = []
+    hours_ahead = 168 if week_mode else 20  # 7 days = 168 hours
     
     # Try Method 1: SbrOddsProvider (most reliable for odds)
     try:
         sys.path.append('src/DataProviders')
         from SbrOddsProvider import SbrOddsProvider
         
-        provider = SbrOddsProvider(sportsbook=sportsbook, hours_ahead=20)
+        provider = SbrOddsProvider(sportsbook=sportsbook, hours_ahead=hours_ahead)
         if provider.games:
-            print(f"[OK] Found {len(provider.games)} games from SBR (next 20 hours, UK timezone)")
+            print(f"[OK] Found {len(provider.games)} games from SBR ({time_range}, UK timezone)")
             for game in provider.games:
                 games.append({
                     'home_team': game['home_team'],
@@ -136,10 +138,10 @@ def get_todays_games(sportsbook='fanduel'):
         from PlayerStatsProvider import PlayerStatsProvider
         
         provider = PlayerStatsProvider()
-        todays_games = provider.get_todays_games_and_rosters(hours_ahead=20)
+        todays_games = provider.get_todays_games_and_rosters(hours_ahead=hours_ahead)
         
         if todays_games:
-            print(f"[OK] Found {len(todays_games)} games from NBA Stats API (next 20 hours, UK timezone)")
+            print(f"[OK] Found {len(todays_games)} games from NBA Stats API ({time_range}, UK timezone)")
             for game in todays_games:
                 # Convert team IDs to full names
                 home_name = get_team_full_name(game.get('home_team', ''))
@@ -186,10 +188,10 @@ def get_todays_games(sportsbook='fanduel'):
             if response.status_code == 200:
                 data = response.json()
                 
-                # Filter games for next 20 hours using UK timezone
+                # Filter games for next 20 hours or 7 days using UK timezone
                 uk_tz = pytz.timezone('Europe/London')
                 now_uk = datetime.now(uk_tz)
-                next_20h_uk = now_uk + timedelta(hours=20)
+                next_time_uk = now_uk + timedelta(hours=hours_ahead)
                 filtered_games = []
                 
                 for game in data:
@@ -202,14 +204,14 @@ def get_todays_games(sportsbook='fanduel'):
                             # Convert to UK timezone for comparison
                             game_time_uk = game_time.astimezone(uk_tz)
                             
-                            # Check if game is within next 20 hours (UK time)
-                            if now_uk <= game_time_uk <= next_20h_uk:
+                            # Check if game is within the time range (UK time)
+                            if now_uk <= game_time_uk <= next_time_uk:
                                 filtered_games.append(game)
                     except Exception as e:
                         # If we can't parse the time, include the game anyway
                         filtered_games.append(game)
                 
-                print(f"[OK] Found {len(filtered_games)} games from The Odds API (next 20 hours, UK timezone)")
+                print(f"[OK] Found {len(filtered_games)} games from The Odds API ({time_range}, UK timezone)")
                 
                 for game in filtered_games:
                     home_team = game.get('home_team', '')
@@ -249,9 +251,9 @@ def get_todays_games(sportsbook='fanduel'):
     
     # If all methods fail, inform user
     if not games:
-        print("[ERROR] No games found for the next 20 hours (UK timezone)")
+        print(f"[ERROR] No games found for the {time_range} (UK timezone)")
         print("[INFO] Possible reasons:")
-        print("   - No NBA games scheduled in the next 20 hours (off-season or off-day)")
+        print(f"   - No NBA games scheduled in the {time_range} (off-season or off-day)")
         print("   - API keys not configured in config.toml")
         print("   - Network connectivity issues")
         print("\n[INFO] To fix:")
@@ -1042,56 +1044,134 @@ def generate_parlays(predictions, min_confidence=0.3, max_legs=6):
         traceback.print_exc()
         return []
 
-def display_predictions(predictions, show_details=True):
+def display_predictions(predictions, show_details=True, week_mode=False):
     """Display predictions in a formatted way"""
-    print(f"\nNBA PREDICTIONS (NEXT 20 HOURS - UK TIMEZONE)")
+    time_range = "NEXT 7 DAYS" if week_mode else "NEXT 20 HOURS"
+    print(f"\nNBA PREDICTIONS ({time_range} - UK TIMEZONE)")
     print("="*70)
     
-    for i, pred in enumerate(predictions, 1):
-        if not pred:
-            continue
+    # Group predictions by date if in week mode
+    if week_mode:
+        from datetime import datetime
+        import pytz
+        
+        # Group games by date
+        games_by_date = {}
+        for pred in predictions:
+            if not pred:
+                continue
+                
+            # Try to extract date from game_time
+            try:
+                if pred.get('game_time') and pred['game_time'] != 'TBD':
+                    # Parse the game time to get date
+                    game_time = datetime.fromisoformat(pred['game_time'].replace('Z', '+00:00'))
+                    uk_tz = pytz.timezone('Europe/London')
+                    game_time_uk = game_time.astimezone(uk_tz)
+                    date_key = game_time_uk.strftime('%A, %B %d, %Y')
+                else:
+                    date_key = "TBD"
+            except:
+                date_key = "TBD"
             
-        print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
-        print("-" * 50)
+            if date_key not in games_by_date:
+                games_by_date[date_key] = []
+            games_by_date[date_key].append(pred)
         
-        # Prediction
-        winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
-        prob = max(pred['home_probability'], pred['away_probability'])
-        
-        print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
-        print(f"CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
-        
-        # Sentiment information
-        if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
-            adj_pct = pred['sentiment_adjustment'] * 100
-            adj_direction = "+" if adj_pct > 0 else ""
-            print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
-            if pred.get('sentiment_narrative'):
-                print(f"    {pred['sentiment_narrative']}")
-            if pred.get('contrarian_opportunity'):
-                print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
-        
-        print(f"RECOMMENDATION: {pred['recommendation']}")
-        
-        # Kelly Criterion
-        if pred['kelly_home']['bet_amount'] > 0:
-            print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
-        if pred['kelly_away']['bet_amount'] > 0:
-            print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
-        
-        # Real-time factors
-        if show_details and pred['real_time_data']:
-            rt_data = pred['real_time_data']
-            if 'injury_scores' in rt_data:
-                home_inj = rt_data['injury_scores']['home_team']
-                away_inj = rt_data['injury_scores']['away_team']
-                if home_inj > 0 or away_inj > 0:
-                    print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
+        # Display by date
+        for date, date_games in games_by_date.items():
+            print(f"\n📅 {date}")
+            print("="*50)
             
-            if 'market_intelligence' in rt_data:
-                intel = rt_data['market_intelligence']
-                if intel.get('sharp_money_indicators'):
-                    print(f"MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
+            for i, pred in enumerate(date_games, 1):
+                print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
+                print("-" * 50)
+                
+                # Prediction
+                winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
+                prob = max(pred['home_probability'], pred['away_probability'])
+                
+                print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
+                print(f"CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
+                
+                # Sentiment information
+                if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
+                    adj_pct = pred['sentiment_adjustment'] * 100
+                    adj_direction = "+" if adj_pct > 0 else ""
+                    print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
+                    if pred.get('sentiment_narrative'):
+                        print(f"    {pred['sentiment_narrative']}")
+                    if pred.get('contrarian_opportunity'):
+                        print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
+                
+                print(f"RECOMMENDATION: {pred['recommendation']}")
+                
+                # Kelly Criterion
+                if pred['kelly_home']['bet_amount'] > 0:
+                    print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
+                if pred['kelly_away']['bet_amount'] > 0:
+                    print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
+                
+                # Real-time factors
+                if show_details and pred['real_time_data']:
+                    rt_data = pred['real_time_data']
+                    if 'injury_scores' in rt_data:
+                        home_inj = rt_data['injury_scores']['home_team']
+                        away_inj = rt_data['injury_scores']['away_team']
+                        if home_inj > 0 or away_inj > 0:
+                            print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
+                    
+                    if 'market_intelligence' in rt_data:
+                        intel = rt_data['market_intelligence']
+                        if intel.get('sharp_money_indicators'):
+                            print(f"MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
+    else:
+        # Original display for daily predictions
+        for i, pred in enumerate(predictions, 1):
+            if not pred:
+                continue
+                
+            print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
+            print("-" * 50)
+            
+            # Prediction
+            winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
+            prob = max(pred['home_probability'], pred['away_probability'])
+            
+            print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
+            print(f"CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
+            
+            # Sentiment information
+            if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
+                adj_pct = pred['sentiment_adjustment'] * 100
+                adj_direction = "+" if adj_pct > 0 else ""
+                print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
+                if pred.get('sentiment_narrative'):
+                    print(f"    {pred['sentiment_narrative']}")
+                if pred.get('contrarian_opportunity'):
+                    print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
+            
+            print(f"RECOMMENDATION: {pred['recommendation']}")
+            
+            # Kelly Criterion
+            if pred['kelly_home']['bet_amount'] > 0:
+                print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
+            if pred['kelly_away']['bet_amount'] > 0:
+                print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
+            
+            # Real-time factors
+            if show_details and pred['real_time_data']:
+                rt_data = pred['real_time_data']
+                if 'injury_scores' in rt_data:
+                    home_inj = rt_data['injury_scores']['home_team']
+                    away_inj = rt_data['injury_scores']['away_team']
+                    if home_inj > 0 or away_inj > 0:
+                        print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
+                
+                if 'market_intelligence' in rt_data:
+                    intel = rt_data['market_intelligence']
+                    if intel.get('sharp_money_indicators'):
+                        print(f"MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
 
 def display_parlays(parlays):
     """Display parlay recommendations"""
@@ -1149,6 +1229,7 @@ def main():
     parser.add_argument('--no-details', action='store_true', help='Hide detailed analysis')
     parser.add_argument('--model', type=str, help='Specify which model to use (e.g., "xgb", "advanced", "super", "ensemble"). Use --list-models to see available options.')
     parser.add_argument('--list-models', action='store_true', help='List all available trained models and exit')
+    parser.add_argument('--week', action='store_true', help='Get predictions for the entire week (next 7 days) instead of just today')
     
     args = parser.parse_args()
     
@@ -1238,10 +1319,11 @@ def main():
         else:
             print("[WARNING] Sentiment analysis unavailable, using base predictions")
     
-    # Get games for the next 20 hours (UK timezone)
-    games = get_todays_games(args.sportsbook)
+    # Get games for the next 20 hours or 7 days (UK timezone)
+    games = get_todays_games(args.sportsbook, week_mode=args.week)
     if not games:
-        print("[ERROR] No games found for the next 20 hours (UK timezone)")
+        time_range = "next 7 days" if args.week else "next 20 hours"
+        print(f"[ERROR] No games found for the {time_range} (UK timezone)")
         print("[INFO] Check your internet connection or try a different sportsbook")
         return False
     
@@ -1285,7 +1367,7 @@ def main():
     
     # Display predictions
     if predictions:
-        display_predictions(predictions, show_details=not args.no_details)
+        display_predictions(predictions, show_details=not args.no_details, week_mode=args.week)
         
         # Generate parlays if requested
         if args.parlays:
@@ -1417,21 +1499,22 @@ def main():
         return False
     
     # Save predictions to Excel with parlays and bankroll allocation
-    save_predictions_to_excel(predictions, parlays if args.parlays else [], args.sportsbook, args.bankroll)
+    save_predictions_to_excel(predictions, parlays if args.parlays else [], args.sportsbook, args.bankroll, week_mode=args.week)
     
     print(f"\n🎉 PREDICTION ANALYSIS COMPLETE!")
     print("💡 Remember: Bet responsibly and within your means!")
     
     return True
 
-def save_predictions_to_excel(predictions, parlays, sportsbook, bankroll):
+def save_predictions_to_excel(predictions, parlays, sportsbook, bankroll, week_mode=False):
     """Save predictions to formatted Excel file with multiple sheets"""
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         
         os.makedirs("Predictions", exist_ok=True)
-        filename = f"Predictions/predictions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        time_suffix = "week" if week_mode else "daily"
+        filename = f"Predictions/predictions_{time_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         
         # Create Excel writer
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
