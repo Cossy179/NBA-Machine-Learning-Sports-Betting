@@ -441,15 +441,32 @@ def make_game_prediction(predictor, home_team, away_team, game_features, real_ti
         away_prob = 1 - home_prob
         confidence = abs(home_prob - 0.5) * 2
         
-        # Apply sentiment adjustment if available (max ±5% adjustment)
+        # Apply sentiment adjustment if available (calibrated ±5-10% adjustment)
         sentiment_adjustment = 0
         sentiment_narrative = None
         contrarian_flag = False
+        high_impact_news = False
         
         if sentiment_data:
             sentiment_diff = sentiment_data.get('sentiment_differential', 0)
+            
+            # Determine adjustment range based on high-impact news
+            # High-impact news (injuries, trades) allows ±10% adjustment
+            # Regular news uses ±5% adjustment
+            high_impact_news = sentiment_data.get('high_impact_news_present', False)
+            adjustment_range = 0.10 if high_impact_news else 0.05
+            
+            # Scale adjustment by sentiment strength
+            sentiment_strength = abs(sentiment_diff)
+            if sentiment_strength > 0.3:  # Strong sentiment
+                scale_factor = 1.0
+            elif sentiment_strength > 0.15:  # Moderate sentiment
+                scale_factor = 0.7
+            else:  # Weak sentiment
+                scale_factor = 0.4
+            
             # Positive differential favors home team, negative favors away
-            sentiment_adjustment = sentiment_diff * 0.05  # Max ±5%
+            sentiment_adjustment = sentiment_diff * adjustment_range * scale_factor
             
             # Adjust probabilities
             home_prob += sentiment_adjustment
@@ -460,8 +477,10 @@ def make_game_prediction(predictor, home_team, away_team, game_features, real_ti
             sentiment_narrative = sentiment_data.get('narrative', '')
             contrarian_flag = sentiment_data.get('contrarian_opportunity', 0) > 0.5
             
-            # Adjust confidence based on buzz
+            # Adjust confidence based on buzz and high-impact news
             buzz_boost = sentiment_data.get('combined_buzz', 0) * 0.03
+            if high_impact_news:
+                buzz_boost += 0.03  # Additional boost for high-impact news
             confidence = min(1.0, confidence + buzz_boost)
         
         # Recalculate confidence after adjustment
