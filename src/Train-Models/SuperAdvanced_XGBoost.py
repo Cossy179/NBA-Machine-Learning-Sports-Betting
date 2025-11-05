@@ -262,117 +262,97 @@ class SuperAdvancedXGBoostTrainer:
         return study.best_params
     
     def optimize_lightgbm(self, X_train, y_train, X_val, y_val, n_trials=50, weights_train=None, weights_val=None):
-        """Optimize LightGBM - OPTIMIZED VERSION with temporal weighting"""
-        from tqdm import tqdm
-        print("\n💡 Optimizing LightGBM (Fast Mode)...")
+        """Optimize LightGBM using enhanced optimizer from hyperparameter_optimizer"""
+        print("\n💡 Optimizing LightGBM (Enhanced Mode)...")
         
-        pbar = tqdm(total=n_trials, desc="LightGBM Trials", unit="trial")
+        # Use the enhanced optimizer from Utils
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Utils'))
+        from hyperparameter_optimizer import LightGBMOptimizer
         
-        def objective(trial):
-            params = {
-                'objective': 'binary',
-                'metric': 'binary_logloss',
-                'boosting_type': 'gbdt',
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-                'num_leaves': trial.suggest_int('num_leaves', 31, 100),  # Narrower range
-                'max_depth': trial.suggest_int('max_depth', 4, 8),  # Narrower range
-                'min_child_samples': trial.suggest_int('min_child_samples', 10, 50),
-                'subsample': trial.suggest_float('subsample', 0.7, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 1.0),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 2.0, log=True),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 2.0, log=True),
-                'device': 'gpu' if self.use_gpu else 'cpu',
-                'verbose': -1,
-                'random_state': 42,
-                'force_col_wise': True  # Faster
-            }
-            
-            # Create Dataset with temporal weights
-            dtrain = lgb.Dataset(X_train, label=y_train, weight=weights_train)
-            dval = lgb.Dataset(X_val, label=y_val, weight=weights_val, reference=dtrain)
-            
-            model = lgb.train(
-                params,
-                dtrain,
-                num_boost_round=1000,  # Reduced from 2000
-                valid_sets=[dval],
-                callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]  # More aggressive
-            )
-            
-            y_pred_proba = model.predict(X_val)
-            loss = log_loss(y_val, y_pred_proba)
-            
-            pbar.update(1)
-            # Safely access best_value
-            try:
-                pbar.set_postfix({'best_loss': f'{study.best_value:.4f}'})
-            except:
-                pbar.set_postfix({'loss': f'{loss:.4f}'})
-            
-            return loss
+        # Combine train and val for cross-validation (the optimizer handles this)
+        X_combined = pd.concat([X_train, X_val], axis=0).values
+        y_combined = pd.concat([pd.Series(y_train), pd.Series(y_val)], axis=0).values
         
-        study = optuna.create_study(direction='minimize', study_name='lightgbm')
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+        # Create dates array (will use TimeSeriesSplit if dates not available)
+        dates = None  # Could be enhanced to pass actual dates
         
-        pbar.close()
-        print(f"✅ Best validation log loss: {study.best_value:.4f}")
-        return study.best_params
+        # Combine weights
+        if weights_train is not None and weights_val is not None:
+            weights_combined = np.concatenate([weights_train, weights_val])
+        else:
+            weights_combined = None
+        
+        # Use enhanced optimizer
+        optimizer = LightGBMOptimizer(
+            n_trials=n_trials,
+            cv_folds=3,
+            optimization_metric='composite',  # Uses composite score
+            verbose=True
+        )
+        
+        best_params = optimizer.optimize(
+            X_combined, 
+            y_combined, 
+            dates=dates,
+            temporal_weights=weights_combined
+        )
+        
+        # Convert back to dict format expected by training code
+        # Add device and other settings
+        best_params['device'] = 'gpu' if self.use_gpu else 'cpu'
+        best_params['verbose'] = -1
+        best_params['force_col_wise'] = True
+        
+        print(f"✅ Best validation score: {optimizer.best_score:.4f}")
+        return best_params
     
     def optimize_catboost(self, X_train, y_train, X_val, y_val, n_trials=50, weights_train=None, weights_val=None):
-        """Optimize CatBoost - OPTIMIZED VERSION with temporal weighting"""
+        """Optimize CatBoost using enhanced optimizer from hyperparameter_optimizer"""
         if not CATBOOST_AVAILABLE:
             print("⚠️ CatBoost not available, skipping...")
             return None
         
-        from tqdm import tqdm
-        print("\n🐱 Optimizing CatBoost (Fast Mode)...")
+        print("\n🐱 Optimizing CatBoost (Enhanced Mode)...")
         
-        pbar = tqdm(total=n_trials, desc="CatBoost Trials", unit="trial")
+        # Use the enhanced optimizer from Utils
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Utils'))
+        from hyperparameter_optimizer import CatBoostOptimizer
         
-        def objective(trial):
-            params = {
-                'loss_function': 'Logloss',
-                'eval_metric': 'Logloss',
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-                'depth': trial.suggest_int('depth', 4, 8),  # Narrower range
-                'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 0.1, 5.0, log=True),
-                'bagging_temperature': trial.suggest_float('bagging_temperature', 0.0, 1.0),
-                'random_strength': trial.suggest_float('random_strength', 0.0, 5.0),
-                'iterations': 1000,  # Reduced from 2000
-                'early_stopping_rounds': 50,  # More aggressive
-                'task_type': 'GPU' if self.use_gpu else 'CPU',
-                'verbose': False,
-                'random_state': 42
-            }
-            
-            model = cb.CatBoostClassifier(**params)
-            model.fit(
-                X_train, y_train,
-                eval_set=(X_val, y_val),
-                sample_weight=weights_train,
-                verbose=False
-            )
-            
-            y_pred_proba = model.predict_proba(X_val)[:, 1]
-            loss = log_loss(y_val, y_pred_proba)
-            
-            pbar.update(1)
-            # Safely access best_value
-            try:
-                pbar.set_postfix({'best_loss': f'{study.best_value:.4f}'})
-            except:
-                pbar.set_postfix({'loss': f'{loss:.4f}'})
-            
-            return loss
+        # Combine train and val for cross-validation
+        X_combined = pd.concat([X_train, X_val], axis=0).values
+        y_combined = pd.concat([pd.Series(y_train), pd.Series(y_val)], axis=0).values
         
-        study = optuna.create_study(direction='minimize', study_name='catboost')
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+        # Create dates array
+        dates = None
         
-        pbar.close()
-        print(f"✅ Best validation log loss: {study.best_value:.4f}")
-        return study.best_params
+        # Combine weights
+        if weights_train is not None and weights_val is not None:
+            weights_combined = np.concatenate([weights_train, weights_val])
+        else:
+            weights_combined = None
+        
+        # Use enhanced optimizer
+        optimizer = CatBoostOptimizer(
+            n_trials=n_trials,
+            cv_folds=3,
+            optimization_metric='composite',
+            verbose=True
+        )
+        
+        best_params = optimizer.optimize(
+            X_combined,
+            y_combined,
+            dates=dates,
+            temporal_weights=weights_combined,
+            cat_features=None  # Could be enhanced to pass categorical feature indices
+        )
+        
+        # Add task type and other settings
+        best_params['task_type'] = 'GPU' if self.use_gpu else 'CPU'
+        best_params['verbose'] = False
+        
+        print(f"✅ Best validation score: {optimizer.best_score:.4f}")
+        return best_params
     
     def train_super_advanced_ensemble(self, n_trials=12):
         """Train super advanced ensemble - OPTIMIZED with comprehensive progress tracking"""

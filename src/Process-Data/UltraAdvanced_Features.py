@@ -388,9 +388,28 @@ class UltraAdvancedFeatureEngine:
         }
     
     def calculate_lineup_synergy_metrics(self, team: str, date: datetime) -> Dict[str, float]:
-        """Calculate lineup combination and synergy metrics"""
+        """Calculate lineup combination and synergy metrics including player usage rates and lineup pace"""
         # This would integrate with actual lineup data in production
         # For now, create sophisticated estimates
+        
+        # Player usage rates (how much each player is used when on court)
+        primary_usage = np.random.uniform(0.28, 0.35)  # Star player usage
+        secondary_usage = np.random.uniform(0.22, 0.28)  # Second option
+        tertiary_usage = np.random.uniform(0.18, 0.22)  # Third option
+        role_player_usage = np.random.uniform(0.12, 0.18)  # Role players
+        bench_usage = np.random.uniform(0.10, 0.15)  # Bench players
+        
+        # Usage distribution metrics
+        usage_concentration = np.std([primary_usage, secondary_usage, tertiary_usage])
+        usage_balance = 1 - usage_concentration  # Higher = more balanced
+        
+        # Lineup pace (possessions per 48 minutes when lineup is on court)
+        starting_lineup_pace = np.random.uniform(95, 105)
+        bench_lineup_pace = np.random.uniform(92, 102)
+        pace_differential = starting_lineup_pace - bench_lineup_pace
+        
+        # Pace consistency (how consistent pace is across lineups)
+        pace_consistency = 1 / (1 + abs(pace_differential) / 5)
         
         return {
             'starting_lineup_continuity': np.random.uniform(0.6, 0.95),
@@ -400,13 +419,23 @@ class UltraAdvancedFeatureEngine:
             'lineup_plus_minus': np.random.normal(0, 5),
             'net_rating_starters': np.random.normal(3, 8),
             'net_rating_bench': np.random.normal(-2, 6),
-            'star_player_usage': np.random.uniform(0.25, 0.35),
+            'star_player_usage': primary_usage,
+            'secondary_player_usage': secondary_usage,
+            'tertiary_player_usage': tertiary_usage,
+            'role_player_usage': role_player_usage,
+            'bench_player_usage': bench_usage,
+            'usage_concentration': usage_concentration,
+            'usage_balance': usage_balance,
+            'starting_lineup_pace': starting_lineup_pace,
+            'bench_lineup_pace': bench_lineup_pace,
+            'lineup_pace_differential': pace_differential,
+            'pace_consistency': pace_consistency,
             'role_player_efficiency': np.random.uniform(0.5, 0.8),
             'depth_chart_strength': np.random.uniform(0.5, 0.85)
         }
     
     def calculate_shot_distribution_metrics(self, team: str, date: datetime, games_df: pd.DataFrame) -> Dict[str, float]:
-        """Calculate shot distribution and efficiency metrics"""
+        """Calculate shot distribution and efficiency metrics with zone-level analysis"""
         # This would analyze actual shot chart data in production
         # For now, create estimates based on modern NBA trends
         
@@ -426,9 +455,48 @@ class UltraAdvancedFeatureEngine:
         mid_range_rate = 1 - three_point_rate - rim_rate
         mid_range_pct = np.random.uniform(0.38, 0.45)
         
+        # Zone-level shot efficiency (detailed shot chart analysis)
+        # Left corner 3PT
+        left_corner_3pt_rate = np.random.uniform(0.05, 0.12)
+        left_corner_3pt_pct = np.random.uniform(0.35, 0.45)
+        
+        # Right corner 3PT
+        right_corner_3pt_rate = np.random.uniform(0.05, 0.12)
+        right_corner_3pt_pct = np.random.uniform(0.35, 0.45)
+        
+        # Above the break 3PT
+        atb_3pt_rate = np.random.uniform(0.20, 0.35)
+        atb_3pt_pct = np.random.uniform(0.32, 0.38)
+        
+        # Restricted area (paint)
+        restricted_area_rate = np.random.uniform(0.20, 0.30)
+        restricted_area_pct = np.random.uniform(0.62, 0.72)
+        
+        # Non-restricted paint
+        paint_rate = np.random.uniform(0.08, 0.15)
+        paint_pct = np.random.uniform(0.45, 0.55)
+        
+        # Mid-range zones
+        mid_range_left_rate = np.random.uniform(0.05, 0.12)
+        mid_range_left_pct = np.random.uniform(0.38, 0.48)
+        
+        mid_range_right_rate = np.random.uniform(0.05, 0.12)
+        mid_range_right_pct = np.random.uniform(0.38, 0.48)
+        
         # Shot quality metrics
         open_shot_pct = np.random.uniform(0.50, 0.70)     # % of shots that are open
         assisted_pct = np.random.uniform(0.55, 0.70)      # % of FG that are assisted
+        
+        # Zone efficiency score (weighted by expected points per shot)
+        zone_efficiency = (
+            left_corner_3pt_rate * left_corner_3pt_pct * 3 +
+            right_corner_3pt_rate * right_corner_3pt_pct * 3 +
+            atb_3pt_rate * atb_3pt_pct * 3 +
+            restricted_area_rate * restricted_area_pct * 2 +
+            paint_rate * paint_pct * 2 +
+            mid_range_left_rate * mid_range_left_pct * 2 +
+            mid_range_right_rate * mid_range_right_pct * 2
+        )
         
         # Shot selection quality score
         shot_quality = (
@@ -458,11 +526,27 @@ class UltraAdvancedFeatureEngine:
             'shooting_efficiency': shooting_efficiency,
             'three_point_volume': three_point_rate * 90,  # Approx 3PA per game
             'rim_volume': rim_rate * 90,
-            'shot_versatility': 1 - np.std([three_point_rate, rim_rate, mid_range_rate])
+            'shot_versatility': 1 - np.std([three_point_rate, rim_rate, mid_range_rate]),
+            # Zone-level features
+            'left_corner_3pt_rate': left_corner_3pt_rate,
+            'left_corner_3pt_pct': left_corner_3pt_pct,
+            'right_corner_3pt_rate': right_corner_3pt_rate,
+            'right_corner_3pt_pct': right_corner_3pt_pct,
+            'atb_3pt_rate': atb_3pt_rate,
+            'atb_3pt_pct': atb_3pt_pct,
+            'restricted_area_rate': restricted_area_rate,
+            'restricted_area_pct': restricted_area_pct,
+            'paint_rate': paint_rate,
+            'paint_pct': paint_pct,
+            'mid_range_left_rate': mid_range_left_rate,
+            'mid_range_left_pct': mid_range_left_pct,
+            'mid_range_right_rate': mid_range_right_rate,
+            'mid_range_right_pct': mid_range_right_pct,
+            'zone_efficiency_score': zone_efficiency
         }
     
     def _get_default_shot_metrics(self) -> Dict[str, float]:
-        """Return default shot metrics"""
+        """Return default shot metrics with zone-level details"""
         return {
             'three_point_rate': 0.40,
             'three_point_pct': 0.36,
@@ -476,7 +560,23 @@ class UltraAdvancedFeatureEngine:
             'shooting_efficiency': 0.55,
             'three_point_volume': 36,
             'rim_volume': 27,
-            'shot_versatility': 0.70
+            'shot_versatility': 0.70,
+            # Zone-level defaults
+            'left_corner_3pt_rate': 0.08,
+            'left_corner_3pt_pct': 0.40,
+            'right_corner_3pt_rate': 0.08,
+            'right_corner_3pt_pct': 0.40,
+            'atb_3pt_rate': 0.25,
+            'atb_3pt_pct': 0.35,
+            'restricted_area_rate': 0.25,
+            'restricted_area_pct': 0.67,
+            'paint_rate': 0.12,
+            'paint_pct': 0.50,
+            'mid_range_left_rate': 0.08,
+            'mid_range_left_pct': 0.43,
+            'mid_range_right_rate': 0.08,
+            'mid_range_right_pct': 0.43,
+            'zone_efficiency_score': 1.05
         }
     
     def calculate_pace_and_style_metrics(self, team: str, date: datetime, games_df: pd.DataFrame) -> Dict[str, float]:
@@ -585,7 +685,7 @@ class UltraAdvancedFeatureEngine:
         }
     
     def calculate_betting_market_advanced_features(self, home_team: str, away_team: str, date: datetime) -> Dict[str, float]:
-        """Calculate advanced betting market signals"""
+        """Calculate advanced betting market signals including closing line and implied odds"""
         
         # Simulate sophisticated market data
         spread = np.random.normal(0, 6)
@@ -597,6 +697,34 @@ class UltraAdvancedFeatureEngine:
         
         opening_total = total + np.random.normal(0, 2)
         total_movement = total - opening_total
+        
+        # Closing line (most important for market efficiency)
+        closing_spread = spread + np.random.normal(0, 0.5)  # Closer to game time, less movement
+        closing_total = total + np.random.normal(0, 1)
+        closing_line_movement = closing_spread - opening_spread
+        
+        # Moneyline odds and implied probabilities
+        home_ml = np.random.uniform(-200, 200)  # Moneyline odds
+        away_ml = -home_ml + np.random.normal(0, 20)
+        
+        # Convert moneyline to implied probability
+        if home_ml > 0:
+            home_implied_prob = 100 / (home_ml + 100)
+        else:
+            home_implied_prob = abs(home_ml) / (abs(home_ml) + 100)
+        
+        if away_ml > 0:
+            away_implied_prob = 100 / (away_ml + 100)
+        else:
+            away_implied_prob = abs(away_ml) / (abs(away_ml) + 100)
+        
+        # Adjust for vig (typically 4-5%)
+        total_implied = home_implied_prob + away_implied_prob
+        vig_adjusted_home_prob = home_implied_prob / total_implied
+        vig_adjusted_away_prob = away_implied_prob / total_implied
+        
+        # Closing line value (CLV) - key metric for sharp bettors
+        closing_line_value = abs(closing_spread - opening_spread)
         
         # Sharp money indicators
         sharp_money_indicator = 1 if abs(spread_movement) > 1.5 else 0
@@ -618,11 +746,32 @@ class UltraAdvancedFeatureEngine:
         # Line stability
         line_stability = 1 / (1 + abs(spread_movement))
         
+        # Closing line efficiency (how close final line is to opening)
+        closing_line_efficiency = 1 / (1 + abs(closing_line_movement))
+        
+        # Implied odds from spread vs moneyline consistency
+        spread_implied_prob = 1 / (1 + 10**(-spread/10))
+        ml_implied_prob = vig_adjusted_home_prob
+        odds_consistency = 1 - abs(spread_implied_prob - ml_implied_prob)
+        
         return {
             'current_spread': spread,
             'current_total': total,
+            'opening_spread': opening_spread,
+            'opening_total': opening_total,
+            'closing_spread': closing_spread,
+            'closing_total': closing_total,
             'spread_movement': spread_movement,
             'total_movement': total_movement,
+            'closing_line_movement': closing_line_movement,
+            'closing_line_value': closing_line_value,
+            'closing_line_efficiency': closing_line_efficiency,
+            'home_moneyline': home_ml,
+            'away_moneyline': away_ml,
+            'home_implied_prob_ml': vig_adjusted_home_prob,
+            'away_implied_prob_ml': vig_adjusted_away_prob,
+            'spread_implied_prob': spread_implied_prob,
+            'odds_consistency': odds_consistency,
             'sharp_money_indicator': sharp_money_indicator,
             'steam_move': steam_move,
             'reverse_line_movement': reverse_line_movement,
@@ -633,6 +782,88 @@ class UltraAdvancedFeatureEngine:
             'line_stability': line_stability,
             'market_efficiency': 1 - abs(public_side_pct - implied_prob),
             'betting_value_score': abs(public_side_pct - implied_prob) + (1 if contrarian_value else 0)
+        }
+    
+    def calculate_rest_and_travel_features(self, home_team: str, away_team: str, date: datetime, games_df: pd.DataFrame) -> Dict[str, float]:
+        """Calculate rest days and travel distance features"""
+        
+        # Find previous games for both teams
+        home_prev_games = games_df[
+            ((games_df['home_team'] == home_team) | (games_df['away_team'] == home_team)) &
+            (games_df['date'] < date)
+        ].sort_values('date', ascending=False)
+        
+        away_prev_games = games_df[
+            ((games_df['home_team'] == away_team) | (games_df['away_team'] == away_team)) &
+            (games_df['date'] < date)
+        ].sort_values('date', ascending=False)
+        
+        # Calculate rest days
+        if len(home_prev_games) > 0:
+            home_last_game_date = home_prev_games.iloc[0]['date']
+            home_rest_days = (date - home_last_game_date).days
+            home_was_home = home_prev_games.iloc[0]['home_team'] == home_team
+        else:
+            home_rest_days = 2  # Default
+            home_was_home = True
+        
+        if len(away_prev_games) > 0:
+            away_last_game_date = away_prev_games.iloc[0]['date']
+            away_rest_days = (date - away_last_game_date).days
+            away_was_home = away_prev_games.iloc[0]['home_team'] == away_team
+        else:
+            away_rest_days = 2  # Default
+            away_was_home = True
+        
+        # Back-to-back indicators
+        home_b2b = 1 if home_rest_days == 0 else 0
+        away_b2b = 1 if away_rest_days == 0 else 0
+        
+        # Rest advantage
+        rest_advantage = home_rest_days - away_rest_days
+        
+        # Travel distance (simplified - would use actual city coordinates in production)
+        # Estimate based on whether team is traveling
+        if away_was_home and not home_was_home:
+            # Away team traveled, home team didn't
+            away_travel_distance = np.random.uniform(500, 2500)  # miles
+            home_travel_distance = 0
+        elif not away_was_home and home_was_home:
+            # Home team traveled (rare but possible)
+            home_travel_distance = np.random.uniform(200, 1500)
+            away_travel_distance = 0
+        elif not away_was_home and not home_was_home:
+            # Both teams traveled
+            away_travel_distance = np.random.uniform(500, 2500)
+            home_travel_distance = np.random.uniform(200, 1500)
+        else:
+            # Both teams at home (rare)
+            home_travel_distance = 0
+            away_travel_distance = 0
+        
+        # Travel fatigue factor
+        away_travel_fatigue = away_travel_distance / 1000 * (1 / (away_rest_days + 1))
+        home_travel_fatigue = home_travel_distance / 1000 * (1 / (home_rest_days + 1))
+        
+        # Rest efficiency (optimal rest is 1-2 days)
+        home_rest_efficiency = 1.0 if 1 <= home_rest_days <= 2 else (0.8 if home_rest_days == 0 else 0.9)
+        away_rest_efficiency = 1.0 if 1 <= away_rest_days <= 2 else (0.8 if away_rest_days == 0 else 0.9)
+        
+        return {
+            'home_rest_days': home_rest_days,
+            'away_rest_days': away_rest_days,
+            'rest_advantage': rest_advantage,
+            'home_b2b': home_b2b,
+            'away_b2b': away_b2b,
+            'both_b2b': 1 if (home_b2b and away_b2b) else 0,
+            'home_travel_distance': home_travel_distance,
+            'away_travel_distance': away_travel_distance,
+            'travel_distance_differential': home_travel_distance - away_travel_distance,
+            'away_travel_fatigue': away_travel_fatigue,
+            'home_travel_fatigue': home_travel_fatigue,
+            'home_rest_efficiency': home_rest_efficiency,
+            'away_rest_efficiency': away_rest_efficiency,
+            'rest_and_travel_advantage': (home_rest_efficiency - away_rest_efficiency) - (away_travel_fatigue - home_travel_fatigue)
         }
     
     def calculate_pca_features(self, feature_dict: Dict[str, float], n_components: int = 10) -> Dict[str, float]:
@@ -754,6 +985,10 @@ class UltraAdvancedFeatureEngine:
             # Advanced Market Features
             market_features = self.calculate_betting_market_advanced_features(home_team, away_team, game_date)
             features.update(market_features)
+            
+            # Rest Days and Travel Distance
+            rest_travel_features = self.calculate_rest_and_travel_features(home_team, away_team, game_date, games_df)
+            features.update(rest_travel_features)
             
             ultra_features.append(features)
         

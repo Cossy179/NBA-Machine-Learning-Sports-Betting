@@ -247,7 +247,17 @@ class XGBoostOptimizer(HyperparameterOptimizer):
 
 
 class LightGBMOptimizer(HyperparameterOptimizer):
-    """Hyperparameter optimization for LightGBM models."""
+    """
+    Enhanced LightGBM hyperparameter optimization with comprehensive parameter tuning.
+    
+    Tunes all critical LightGBM parameters including:
+    - Learning rate, num_leaves, max_depth
+    - Feature and bagging fractions (reduces overfitting)
+    - Bagging frequency (controls subsampling)
+    - Regularization (L1/L2 via reg_alpha/reg_lambda)
+    - Min gain to split (early stopping for individual trees)
+    - Boosting type (gbdt, dart, goss)
+    """
     
     def optimize(
         self,
@@ -256,30 +266,65 @@ class LightGBMOptimizer(HyperparameterOptimizer):
         dates: Optional[pd.Series] = None,
         temporal_weights: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
-        """Optimize LightGBM hyperparameters."""
+        """Optimize LightGBM hyperparameters with comprehensive tuning."""
         import lightgbm as lgb
         
         def objective(trial):
+            # Core parameters
+            boosting_type = trial.suggest_categorical('boosting_type', ['gbdt', 'dart', 'goss'])
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3, log=True)
+            num_leaves = trial.suggest_int('num_leaves', 31, 300)
+            max_depth = trial.suggest_int('max_depth', 3, 12)
+            min_child_samples = trial.suggest_int('min_child_samples', 5, 100)
+            
+            # Feature and bagging fractions (critical for overfitting prevention)
+            feature_fraction = trial.suggest_float('feature_fraction', 0.4, 1.0)
+            bagging_fraction = trial.suggest_float('bagging_fraction', 0.4, 1.0)
+            bagging_freq = trial.suggest_int('bagging_freq', 1, 7)
+            
+            # Regularization (L1/L2)
+            reg_alpha = trial.suggest_float('reg_alpha', 0.0, 10.0, log=True)
+            reg_lambda = trial.suggest_float('reg_lambda', 0.0, 10.0, log=True)
+            
+            # Additional regularization
+            min_gain_to_split = trial.suggest_float('min_gain_to_split', 0.0, 15.0)
+            min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 5, 50)
+            
+            # Subsample (used with bagging_fraction)
+            subsample = trial.suggest_float('subsample', 0.5, 1.0)
+            colsample_bytree = trial.suggest_float('colsample_bytree', 0.5, 1.0)
+            
             params = {
-                'max_depth': trial.suggest_int('max_depth', 2, 8),
-                'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.3, log=True),
-                'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=50),
-                'num_leaves': trial.suggest_int('num_leaves', 20, 150),
-                'min_child_samples': trial.suggest_int('min_child_samples', 10, 100),
-                'subsample': trial.suggest_float('subsample', 0.5, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
                 'objective': 'binary',
                 'metric': 'binary_logloss',
+                'boosting_type': boosting_type,
+                'learning_rate': learning_rate,
+                'num_leaves': num_leaves,
+                'max_depth': max_depth,
+                'min_child_samples': min_child_samples,
+                'feature_fraction': feature_fraction,
+                'bagging_fraction': bagging_fraction,
+                'bagging_freq': bagging_freq,
+                'subsample': subsample,
+                'colsample_bytree': colsample_bytree,
+                'reg_alpha': reg_alpha,
+                'reg_lambda': reg_lambda,
+                'min_gain_to_split': min_gain_to_split,
+                'min_data_in_leaf': min_data_in_leaf,
                 'random_state': self.random_state,
-                'verbosity': -1
+                'verbosity': -1,
+                'force_col_wise': True  # Faster training
             }
             
-            # Time-based cross-validation
+            # Time-aware cross-validation (rolling window to avoid data leakage)
             if dates is not None:
-                from time_series_validation import create_time_based_splits
-                splits = create_time_based_splits(dates, n_splits=self.cv_folds)
+                try:
+                    from time_series_validation import create_time_based_splits
+                    splits = create_time_based_splits(dates, n_splits=self.cv_folds)
+                except ImportError:
+                    # Fallback to TimeSeriesSplit if custom module not available
+                    tscv = TimeSeriesSplit(n_splits=self.cv_folds)
+                    splits = list(tscv.split(X))
             else:
                 tscv = TimeSeriesSplit(n_splits=self.cv_folds)
                 splits = list(tscv.split(X))
@@ -289,19 +334,28 @@ class LightGBMOptimizer(HyperparameterOptimizer):
                 X_train, X_val = X[train_idx], X[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
                 
+                # Apply temporal weights if provided
                 if temporal_weights is not None:
                     w_train = temporal_weights[train_idx]
                 else:
                     w_train = None
                 
-                model = lgb.LGBMClassifier(**params)
+                # Train with early stopping and regularization
+                model = lgb.LGBMClassifier(
+                    **params,
+                    n_estimators=1000  # Will be stopped early
+                )
                 model.fit(
                     X_train, y_train,
                     sample_weight=w_train,
                     eval_set=[(X_val, y_val)],
-                    callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)]
+                    callbacks=[
+                        lgb.early_stopping(stopping_rounds=50, verbose=False),
+                        lgb.log_evaluation(0)
+                    ]
                 )
                 
+                # Evaluate with comprehensive metrics
                 metrics = self._evaluate_model(model, X_val, y_val)
                 score = metrics[self.optimization_metric]
                 scores.append(score)
@@ -310,9 +364,13 @@ class LightGBMOptimizer(HyperparameterOptimizer):
         
         if self.verbose:
             print(f"\n{'='*60}")
-            print("LightGBM Hyperparameter Optimization")
+            print("LightGBM Hyperparameter Optimization (Enhanced)")
             print(f"{'='*60}")
             print(f"Trials: {self.n_trials}, CV Folds: {self.cv_folds}")
+            print(f"Optimizing: {self.optimization_metric}")
+            print(f"Parameters: learning_rate, num_leaves, max_depth,")
+            print(f"            feature_fraction, bagging_fraction, bagging_freq,")
+            print(f"            reg_alpha (L1), reg_lambda (L2), min_gain_to_split")
             print(f"{'='*60}\n")
         
         sampler = TPESampler(seed=self.random_state)
@@ -337,8 +395,8 @@ class LightGBMOptimizer(HyperparameterOptimizer):
             print(f"\n✅ Optimization complete!")
             print(f"Best {self.optimization_metric}: {self.best_score:.4f}")
             print(f"\nBest parameters:")
-            for param, value in self.best_params.items():
-                print(f"  {param:20s}: {value}")
+            for param, value in sorted(self.best_params.items()):
+                print(f"  {param:25s}: {value}")
             print()
         
         return self.best_params
@@ -630,4 +688,185 @@ def optimize_logistic_regression(
     """Quick Logistic Regression optimization."""
     optimizer = LogisticRegressionOptimizer(n_trials=n_trials, **kwargs)
     return optimizer.optimize(X, y, dates, temporal_weights)
+
+
+class CatBoostOptimizer(HyperparameterOptimizer):
+    """
+    CatBoost hyperparameter optimization.
+    
+    CatBoost often outperforms LightGBM and XGBoost, especially with:
+    - Native categorical variable handling
+    - Built-in overfitting detection
+    - Strong default parameters
+    - Fast prediction times
+    """
+    
+    def optimize(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        dates: Optional[pd.Series] = None,
+        temporal_weights: Optional[np.ndarray] = None,
+        cat_features: Optional[list] = None
+    ) -> Dict[str, Any]:
+        """Optimize CatBoost hyperparameters."""
+        try:
+            import catboost as cb
+        except ImportError:
+            raise ImportError(
+                "CatBoost is not installed. Install with: pip install catboost"
+            )
+        
+        def objective(trial):
+            # Core parameters
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3, log=True)
+            depth = trial.suggest_int('depth', 4, 10)
+            l2_leaf_reg = trial.suggest_float('l2_leaf_reg', 0.1, 10.0, log=True)
+            
+            # Overfitting prevention
+            bagging_temperature = trial.suggest_float('bagging_temperature', 0.0, 1.0)
+            random_strength = trial.suggest_float('random_strength', 0.0, 10.0)
+            
+            # Feature sampling
+            colsample_bylevel = trial.suggest_float('colsample_bylevel', 0.4, 1.0)
+            
+            # Regularization
+            reg_lambda = trial.suggest_float('reg_lambda', 0.0, 10.0, log=True)
+            
+            # Model complexity
+            min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 1, 20)
+            max_leaves = trial.suggest_int('max_leaves', 16, 64)
+            
+            params = {
+                'loss_function': 'Logloss',
+                'eval_metric': 'Logloss',
+                'learning_rate': learning_rate,
+                'depth': depth,
+                'l2_leaf_reg': l2_leaf_reg,
+                'bagging_temperature': bagging_temperature,
+                'random_strength': random_strength,
+                'colsample_bylevel': colsample_bylevel,
+                'reg_lambda': reg_lambda,
+                'min_data_in_leaf': min_data_in_leaf,
+                'max_leaves': max_leaves,
+                'iterations': 1000,  # Will be stopped early
+                'early_stopping_rounds': 50,
+                'verbose': False,
+                'random_state': self.random_state,
+                'thread_count': -1  # Use all available cores
+            }
+            
+            # GPU support if available
+            try:
+                import subprocess
+                result = subprocess.run(['nvidia-smi'], capture_output=True)
+                if result.returncode == 0:
+                    params['task_type'] = 'GPU'
+                    params['devices'] = '0'
+            except:
+                params['task_type'] = 'CPU'
+            
+            # Time-aware cross-validation
+            if dates is not None:
+                try:
+                    from time_series_validation import create_time_based_splits
+                    splits = create_time_based_splits(dates, n_splits=self.cv_folds)
+                except ImportError:
+                    tscv = TimeSeriesSplit(n_splits=self.cv_folds)
+                    splits = list(tscv.split(X))
+            else:
+                tscv = TimeSeriesSplit(n_splits=self.cv_folds)
+                splits = list(tscv.split(X))
+            
+            scores = []
+            for train_idx, val_idx in splits:
+                X_train, X_val = X[train_idx], X[val_idx]
+                y_train, y_val = y[train_idx], y[val_idx]
+                
+                # Apply temporal weights if provided
+                if temporal_weights is not None:
+                    w_train = temporal_weights[train_idx]
+                else:
+                    w_train = None
+                
+                # Create pool for CatBoost (supports categorical features)
+                train_pool = cb.Pool(
+                    X_train, 
+                    y_train, 
+                    weight=w_train,
+                    cat_features=cat_features
+                )
+                val_pool = cb.Pool(
+                    X_val, 
+                    y_val,
+                    cat_features=cat_features
+                )
+                
+                # Train model
+                model = cb.CatBoostClassifier(**params)
+                model.fit(
+                    train_pool,
+                    eval_set=val_pool,
+                    verbose=False
+                )
+                
+                # Evaluate
+                metrics = self._evaluate_model(model, X_val, y_val)
+                score = metrics[self.optimization_metric]
+                scores.append(score)
+            
+            return np.mean(scores)
+        
+        if self.verbose:
+            print(f"\n{'='*60}")
+            print("CatBoost Hyperparameter Optimization")
+            print(f"{'='*60}")
+            print(f"Trials: {self.n_trials}, CV Folds: {self.cv_folds}")
+            print(f"Optimizing: {self.optimization_metric}")
+            print(f"Parameters: learning_rate, depth, l2_leaf_reg,")
+            print(f"            bagging_temperature, random_strength,")
+            print(f"            colsample_bylevel, reg_lambda")
+            print(f"{'='*60}\n")
+        
+        sampler = TPESampler(seed=self.random_state)
+        pruner = MedianPruner(n_startup_trials=10, n_warmup_steps=5)
+        
+        self.study = optuna.create_study(
+            direction='maximize',
+            sampler=sampler,
+            pruner=pruner
+        )
+        
+        self.study.optimize(
+            objective,
+            n_trials=self.n_trials,
+            show_progress_bar=self.verbose
+        )
+        
+        self.best_params = self.study.best_params
+        self.best_score = self.study.best_value
+        
+        if self.verbose:
+            print(f"\n✅ Optimization complete!")
+            print(f"Best {self.optimization_metric}: {self.best_score:.4f}")
+            print(f"\nBest parameters:")
+            for param, value in sorted(self.best_params.items()):
+                print(f"  {param:25s}: {value}")
+            print()
+        
+        return self.best_params
+
+
+def optimize_catboost(
+    X: np.ndarray,
+    y: np.ndarray,
+    dates: Optional[pd.Series] = None,
+    temporal_weights: Optional[np.ndarray] = None,
+    cat_features: Optional[list] = None,
+    n_trials: int = 100,
+    **kwargs
+) -> Dict[str, Any]:
+    """Quick CatBoost optimization."""
+    optimizer = CatBoostOptimizer(n_trials=n_trials, **kwargs)
+    return optimizer.optimize(X, y, dates, temporal_weights, cat_features)
 
