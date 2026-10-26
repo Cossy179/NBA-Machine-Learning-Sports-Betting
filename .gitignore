@@ -125,3 +125,6 @@ Models/NN_Models/
 Models/Boosted_Models/
 Models/Online_Models/
 Models/Parlay_Models/
+
+# ESPN download cache (rebuilt automatically)
+Data/espn_cache/

@@ -6,6 +6,7 @@ Makes predictions for today's NBA games with parlays, real-time data, and bettin
 import sys
 import os
 import argparse
+import json
 import warnings
 from datetime import datetime, timedelta
 import numpy as np
@@ -36,56 +37,27 @@ def print_header():
     print(f"Time: {datetime.now().strftime('%I:%M %p')}")
     print()
 
-def load_prediction_system(model_name=None):
-    """Load the specified prediction system or best available"""
-    print("Loading NBA prediction system...")
-    
+
+def load_prediction_system():
+    """Load the LightGBM v2 model (Models/LightGBM_V2/)"""
+    print("Loading LightGBM v2 model...")
     try:
-        # Load AutoModelSelector for best model
-        sys.path.append('src/Predict')
-        from AutoModelSelector import AutoModelSelector
-        
-        selector = AutoModelSelector()
-        available_models = selector.scan_available_models()
-        
-        if available_models:
-            if model_name:
-                # Try to find the specified model
-                selected_model = None
-                for model_key, model_info in available_models.items():
-                    if model_name.lower() in model_key.lower():
-                        selected_model = {
-                            'name': model_key,
-                            'type': model_info.get('type', 'single'),
-                            'confidence': model_info.get('confidence', 0.5)
-                        }
-                        break
-                
-                if selected_model:
-                    print(f"[OK] Loaded specified model: {selected_model['name']}")
-                    # Override the best model selection with proper structure
-                    selector.best_model = {
-                        'name': selected_model['name'],
-                        'type': selected_model.get('type', 'single'),
-                        'system': None
-                    }
-                    return selector
-                else:
-                    print(f"[WARNING] Model '{model_name}' not found. Available models:")
-                    for model in available_models:
-                        print(f"   - {model['name']}")
-                    print("[INFO] Using best available model instead...")
-            
-            best_model = selector.select_best_model()
-            print(f"[OK] Loaded model: {best_model['name'] if best_model else 'Default'}")
-            return selector
-        else:
-            print("[ERROR] No trained models found!")
-            print("[INFO] Train models first: python train.py --all")
-            return None
-            
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'Predict'))
+        from LightGBMV2Predictor import LightGBMV2Predictor
+        predictor = LightGBMV2Predictor()
+        print(f"[OK] {predictor.describe()}")
+        betting = predictor.metadata.get('evaluation', {}).get('betting_2025_26') or {}
+        if betting.get('flat_stake_roi') is not None:
+            print(f"[INFO] 2025-26 test vs closing odds: model log loss {betting['model']['log_loss']:.3f}, "
+                  f"bookmakers {betting['bookmakers']['log_loss']:.3f} (lower is better)")
+            if betting['flat_stake_roi'] < 0:
+                print(f"[WARNING] Betting this model's value picks in 2025-26 returned "
+                      f"{betting['flat_stake_roi']:+.1%} per bet ({betting['bets']} bets). "
+                      f"The bookmakers' odds were more accurate; treat recommendations with caution.")
+        return predictor
     except Exception as e:
-        print(f"[ERROR] Error loading prediction system: {e}")
+        print(f"[ERROR] Could not load the LightGBM v2 model: {e}")
+        print("[INFO] Train it first: python src/Train-Models/LightGBM_V2.py")
         return None
 
 def load_real_time_data():
@@ -102,6 +74,45 @@ def load_real_time_data():
     except Exception as e:
         print(f"[ERROR] Error loading real-time data provider: {e}")
         return None
+
+def american_to_decimal(odds):
+    """American moneyline to decimal odds"""
+    odds = float(odds)
+    return odds / 100 + 1 if odds > 0 else 100 / abs(odds) + 1
+
+
+def decimal_to_american(decimal_odds):
+    """Decimal odds to American moneyline"""
+    if decimal_odds >= 2:
+        return round((decimal_odds - 1) * 100)
+    return round(-100 / (decimal_odds - 1))
+
+
+def select_moneyline(game, sportsbook):
+    """Moneylines from the chosen sportsbook; if it has no line yet, the SBR consensus,
+    else the median across the books that do."""
+    home_ml = game.get('home_ml') or {}
+    away_ml = game.get('away_ml') or {}
+    for book in (sportsbook, 'consensus'):
+        if home_ml.get(book) and away_ml.get(book):
+            return home_ml[book], away_ml[book], book
+    books = [b for b in home_ml if home_ml.get(b) and away_ml.get(b)]
+    if not books:
+        return None, None, None
+    home = decimal_to_american(float(np.median([american_to_decimal(home_ml[b]) for b in books])))
+    away = decimal_to_american(float(np.median([american_to_decimal(away_ml[b]) for b in books])))
+    return home, away, f"median of {len(books)} books"
+
+
+def us_game_day(start_utc):
+    """US (Eastern) calendar date of a game from its UTC start time"""
+    import pytz
+    try:
+        start = datetime.fromisoformat(str(start_utc).replace('Z', '+00:00'))
+        return start.astimezone(pytz.timezone('America/New_York')).date()
+    except Exception:
+        return datetime.now(pytz.timezone('America/New_York')).date()
+
 
 def get_todays_games(sportsbook='fanduel', week_mode=False):
     """Get NBA games for the next 20 hours (UK timezone) or next 7 days with odds from multiple sources"""
@@ -120,15 +131,21 @@ def get_todays_games(sportsbook='fanduel', week_mode=False):
         if provider.games:
             print(f"[OK] Found {len(provider.games)} games from SBR ({time_range}, UK timezone)")
             for game in provider.games:
+                home_odds, away_odds, odds_source = select_moneyline(game, sportsbook)
                 games.append({
                     'home_team': game['home_team'],
                     'away_team': game['away_team'],
-                    'game_time': game.get('event_time', 'TBD'),
-                    'home_odds': game.get('home_ml', {}).get(sportsbook),
-                    'away_odds': game.get('away_ml', {}).get(sportsbook),
-                    'spread': game.get('spread', {}).get(sportsbook),
-                    'total': game.get('total', {}).get(sportsbook)
+                    'game_time': game.get('date') or game.get('event_time', 'TBD'),
+                    'game_day': us_game_day(game.get('date')),
+                    'home_odds': home_odds,
+                    'away_odds': away_odds,
+                    'odds_source': odds_source,
+                    'spread': (game.get('home_spread') or {}).get(sportsbook),
+                    'total': (game.get('total') or {}).get(sportsbook)
                 })
+            missing = [g for g in games if g['odds_source'] not in (sportsbook, None)]
+            if missing:
+                print(f"[INFO] {sportsbook} has no line yet for {len(missing)} game(s); using consensus/median odds")
             return games
     except Exception as e:
         print(f"[WARNING] SBR provider failed: {e}")
@@ -280,286 +297,118 @@ def get_team_full_name(abbrev):
     }
     return team_names.get(abbrev, abbrev)
 
-def create_game_features(home_team, away_team, real_time_provider=None, feature_count=106):
-    """Create features for a specific game using historical data and real-time adjustments
-    
-    Args:
-        home_team: Home team name
-        away_team: Away team name
-        real_time_provider: Optional provider for real-time data
-        feature_count: Number of features to generate (106 for base models, 200 for ultra models)
-    """
-    try:
-        # Get real-time data if provider available
-        real_time_data = None
-        if real_time_provider:
-            try:
-                real_time_data = real_time_provider.get_comprehensive_game_data(
-                    home_team, away_team, datetime.now()
-                )
-            except Exception as e:
-                pass  # Silently fail, use baseline features
-        
-        # Load team data from database for feature creation
-        try:
-            import sqlite3
-            con = sqlite3.connect("Data/TeamData.sqlite")
-            
-            # Try to get most recent team stats
-            team_tables = pd.read_sql_query(
-                "SELECT name FROM sqlite_master WHERE type='table'",
-                con
-            )
-            
-            if not team_tables.empty:
-                # Get most recent date
-                latest_date = team_tables['name'].max()
-                team_stats = pd.read_sql_query(
-                    f"SELECT * FROM \"{latest_date}\"",
-                    con
-                )
-                
-                # Create features from team stats
-                # Find home and away team in data
-                home_stats = team_stats[team_stats['TEAM_NAME'].str.contains(home_team.split()[-1], case=False, na=False)]
-                away_stats = team_stats[team_stats['TEAM_NAME'].str.contains(away_team.split()[-1], case=False, na=False)]
-                
-                if not home_stats.empty and not away_stats.empty:
-                    # Extract numeric features
-                    numeric_cols = home_stats.select_dtypes(include=[np.number]).columns
-                    
-                    home_features = home_stats[numeric_cols].iloc[0].values
-                    away_features = away_stats[numeric_cols].iloc[0].values
-                    
-                    # Combine features
-                    features = np.concatenate([home_features, away_features])
-                    
-                    # Pad or truncate to expected size
-                    if len(features) < feature_count:
-                        # Pad with small random values (not zeros, to simulate missing advanced features)
-                        padding = np.random.randn(feature_count - len(features)) * 0.1
-                        features = np.concatenate([features, padding])
-                    else:
-                        features = features[:feature_count]
-                else:
-                    # Couldn't find teams, use baseline with league averages
-                    features = np.random.randn(feature_count) * 0.5
-            else:
-                features = np.random.randn(feature_count) * 0.5
-            
-            con.close()
-            
-        except Exception as e:
-            # If database access fails, create baseline features
-            features = np.random.randn(feature_count) * 0.5
-        
-        # Add real-time adjustments if available
-        if real_time_data and 'composite_scores' in real_time_data:
-            scores = real_time_data['composite_scores']
-            # Apply real-time adjustments to features
-            if len(features) > 1:
-                features[0] += scores.get('home_team_advantage', 0)
-                features[1] += scores.get('away_team_advantage', 0)
-        
-        # Add some contextual adjustments
-        # Home court advantage (approximately 3-4 points in NBA)
-        if len(features) > 0:
-            features[0] += 0.15  # Boost home team slightly
-        
-        # For advanced models that expect specific feature names, create a DataFrame
-        if feature_count == 106:  # Advanced XGBoost expects specific features
-            # Create a DataFrame with the expected feature names
-            expected_features = [
-                'GP', 'W', 'L', 'W_PCT', 'MIN', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 
-                'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 
-                'PF', 'PFD', 'PTS', 'PLUS_MINUS', 'GP_RANK', 'W_RANK', 'L_RANK', 'W_PCT_RANK', 
-                'MIN_RANK', 'FGM_RANK', 'FGA_RANK', 'FG_PCT_RANK', 'FG3M_RANK', 'FG3A_RANK', 
-                'FG3_PCT_RANK', 'FTM_RANK', 'FTA_RANK', 'FT_PCT_RANK', 'OREB_RANK', 'DREB_RANK', 
-                'REB_RANK', 'AST_RANK', 'TOV_RANK', 'STL_RANK', 'BLK_RANK', 'BLKA_RANK', 'PF_RANK', 
-                'PFD_RANK', 'PTS_RANK', 'PLUS_MINUS_RANK', 'GP.1', 'W.1', 'L.1', 'W_PCT.1', 
-                'MIN.1', 'FGM.1', 'FGA.1', 'FG_PCT.1', 'FG3M.1', 'FG3A.1', 'FG3_PCT.1', 'FTM.1', 
-                'FTA.1', 'FT_PCT.1', 'OREB.1', 'DREB.1', 'REB.1', 'AST.1', 'TOV.1', 'STL.1', 
-                'BLK.1', 'BLKA.1', 'PF.1', 'PFD.1', 'PTS.1', 'PLUS_MINUS.1', 'GP_RANK.1', 
-                'W_RANK.1', 'L_RANK.1', 'W_PCT_RANK.1', 'MIN_RANK.1', 'FGM_RANK.1', 'FGA_RANK.1', 
-                'FG_PCT_RANK.1', 'FG3M_RANK.1', 'FG3A_RANK.1', 'FG3_PCT_RANK.1', 'FTM_RANK.1', 
-                'FTA_RANK.1', 'FT_PCT_RANK.1', 'OREB_RANK.1', 'DREB_RANK.1', 'REB_RANK.1', 
-                'AST_RANK.1', 'TOV_RANK.1', 'STL_RANK.1', 'BLK_RANK.1', 'PF_RANK.1', 'PFD_RANK.1', 
-                'PTS_RANK.1', 'PLUS_MINUS_RANK.1', 'Days-Rest-Home', 'Days-Rest-Away'
-            ]
-            
-            # Ensure we have the right number of features
-            if len(features) < len(expected_features):
-                padding = np.random.randn(len(expected_features) - len(features)) * 0.1
-                features = np.concatenate([features, padding])
-            elif len(features) > len(expected_features):
-                features = features[:len(expected_features)]
-            
-            # Create DataFrame with expected feature names
-            features_df = pd.DataFrame([features], columns=expected_features)
-            return features_df, real_time_data
-        
-        return features, real_time_data
-        
-    except Exception as e:
-        # Fallback to random features if all else fails
-        if feature_count == 106:
-            # Return DataFrame for advanced models
-            expected_features = [
-                'GP', 'W', 'L', 'W_PCT', 'MIN', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 
-                'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK', 'BLKA', 
-                'PF', 'PFD', 'PTS', 'PLUS_MINUS', 'GP_RANK', 'W_RANK', 'L_RANK', 'W_PCT_RANK', 
-                'MIN_RANK', 'FGM_RANK', 'FGA_RANK', 'FG_PCT_RANK', 'FG3M_RANK', 'FG3A_RANK', 
-                'FG3_PCT_RANK', 'FTM_RANK', 'FTA_RANK', 'FT_PCT_RANK', 'OREB_RANK', 'DREB_RANK', 
-                'REB_RANK', 'AST_RANK', 'TOV_RANK', 'STL_RANK', 'BLK_RANK', 'BLKA_RANK', 'PF_RANK', 
-                'PFD_RANK', 'PTS_RANK', 'PLUS_MINUS_RANK', 'GP.1', 'W.1', 'L.1', 'W_PCT.1', 
-                'MIN.1', 'FGM.1', 'FGA.1', 'FG_PCT.1', 'FG3M.1', 'FG3A.1', 'FG3_PCT.1', 'FTM.1', 
-                'FTA.1', 'FT_PCT.1', 'OREB.1', 'DREB.1', 'REB.1', 'AST.1', 'TOV.1', 'STL.1', 
-                'BLK.1', 'BLKA.1', 'PF.1', 'PFD.1', 'PTS.1', 'PLUS_MINUS.1', 'GP_RANK.1', 
-                'W_RANK.1', 'L_RANK.1', 'W_PCT_RANK.1', 'MIN_RANK.1', 'FGM_RANK.1', 'FGA_RANK.1', 
-                'FG_PCT_RANK.1', 'FG3M_RANK.1', 'FG3A_RANK.1', 'FG3_PCT_RANK.1', 'FTM_RANK.1', 
-                'FTA_RANK.1', 'FT_PCT_RANK.1', 'OREB_RANK.1', 'DREB_RANK.1', 'REB_RANK.1', 
-                'AST_RANK.1', 'TOV_RANK.1', 'STL_RANK.1', 'BLK_RANK.1', 'PF_RANK.1', 'PFD_RANK.1', 
-                'PTS_RANK.1', 'PLUS_MINUS_RANK.1', 'Days-Rest-Home', 'Days-Rest-Away'
-            ]
-            fallback_features = np.random.randn(len(expected_features)) * 0.5
-            features_df = pd.DataFrame([fallback_features], columns=expected_features)
-            return features_df, None
-        else:
-            return np.random.randn(feature_count) * 0.5, None
 
-def make_game_prediction(predictor, home_team, away_team, game_features, real_time_data=None, odds=None, bankroll=1000, sentiment_data=None):
-    """Make prediction for a single game with optional sentiment adjustment"""
+
+
+def make_game_prediction(predictor, game, bankroll=1000, sentiment_data=None, min_edge=0.03,
+                         kelly_multiplier=0.5, real_time_data=None):
+    """Model probability, optional sentiment adjustment, and value against the odds.
+
+    A bet is recommended only when the expected value at the offered price is at
+    least `min_edge` (e.g. 0.03 = +3% per unit staked)."""
+    home_team, away_team = game['home_team'], game['away_team']
     try:
-        # Get prediction from best model
-        prediction = predictor.predict_with_best_model(game_features)
-        
-        if not prediction:
-            return None
-        
-        # Calculate betting analysis
-        home_prob = prediction.get('probability', 0.5)
-        away_prob = 1 - home_prob
-        confidence = abs(home_prob - 0.5) * 2
-        
-        # Apply sentiment adjustment if available (calibrated ±5-10% adjustment)
-        sentiment_adjustment = 0
-        sentiment_narrative = None
-        contrarian_flag = False
-        high_impact_news = False
-        
-        if sentiment_data:
-            sentiment_diff = sentiment_data.get('sentiment_differential', 0)
-            
-            # Determine adjustment range based on high-impact news
-            # High-impact news (injuries, trades) allows ±10% adjustment
-            # Regular news uses ±5% adjustment
-            high_impact_news = sentiment_data.get('high_impact_news_present', False)
-            adjustment_range = 0.10 if high_impact_news else 0.05
-            
-            # Scale adjustment by sentiment strength
-            sentiment_strength = abs(sentiment_diff)
-            if sentiment_strength > 0.3:  # Strong sentiment
-                scale_factor = 1.0
-            elif sentiment_strength > 0.15:  # Moderate sentiment
-                scale_factor = 0.7
-            else:  # Weak sentiment
-                scale_factor = 0.4
-            
-            # Positive differential favors home team, negative favors away
-            sentiment_adjustment = sentiment_diff * adjustment_range * scale_factor
-            
-            # Adjust probabilities
-            home_prob += sentiment_adjustment
-            home_prob = max(0.0, min(1.0, home_prob))
-            away_prob = 1 - home_prob
-            
-            # Store sentiment info
-            sentiment_narrative = sentiment_data.get('narrative', '')
-            contrarian_flag = sentiment_data.get('contrarian_opportunity', 0) > 0.5
-            
-            # Adjust confidence based on buzz and high-impact news
-            buzz_boost = sentiment_data.get('combined_buzz', 0) * 0.03
-            if high_impact_news:
-                buzz_boost += 0.03  # Additional boost for high-impact news
-            confidence = min(1.0, confidence + buzz_boost)
-        
-        # Recalculate confidence after adjustment
-        confidence = abs(home_prob - 0.5) * 2
-        
-        # Kelly Criterion calculation with actual bankroll
-        if odds:
-            home_odds = odds.get('home_odds', -110)
-            away_odds = odds.get('away_odds', -110)
-            
-            # Calculate Kelly bet sizes using actual bankroll
-            home_kelly = calculate_kelly_bet(home_prob, home_odds, bankroll=bankroll)
-            away_kelly = calculate_kelly_bet(away_prob, away_odds, bankroll=bankroll)
-        else:
-            home_kelly = away_kelly = 0
-        
-        # Determine recommendation (lowered thresholds for better detection)
-        if home_prob > 0.55:
-            recommendation = f"BET HOME: {home_team}"
-            bet_confidence = "HIGH" if confidence > 0.25 else "MEDIUM"
-        elif away_prob > 0.55:
-            recommendation = f"BET AWAY: {away_team}"
-            bet_confidence = "HIGH" if confidence > 0.25 else "MEDIUM"
-        else:
-            recommendation = "NO BET - Low confidence"
-            bet_confidence = "LOW"
-        
-        return {
-            'home_team': home_team,
-            'away_team': away_team,
-            'home_probability': home_prob,
-            'away_probability': away_prob,
-            'confidence': confidence,
-            'prediction': 'HOME' if home_prob > 0.5 else 'AWAY',
-            'recommendation': recommendation,
-            'bet_confidence': bet_confidence,
-            'kelly_home': home_kelly,
-            'kelly_away': away_kelly,
-            'real_time_data': real_time_data,
-            'model_info': prediction,
-            'sentiment_adjustment': sentiment_adjustment,
-            'sentiment_narrative': sentiment_narrative,
-            'contrarian_opportunity': contrarian_flag
-        }
-        
+        model = predictor.predict(home_team, away_team, game.get('game_day') or us_game_day(None))
+    except KeyError as e:
+        print(f"    Skipped: {e}")
+        return None
     except Exception as e:
-        print(f"❌ Error making prediction: {e}")
+        print(f"    Error making prediction: {e}")
         return None
 
-def calculate_kelly_bet(probability, odds, bankroll=1000, max_bet_pct=0.05):
-    """Calculate Kelly Criterion bet size"""
+    model_home_prob = model['probability']
+    home_prob = model_home_prob
+
+    # Sentiment adjustment (calibrated +/-5-10%); not part of the backtested model
+    sentiment_adjustment = 0
+    sentiment_narrative = None
+    contrarian_flag = False
+    if sentiment_data:
+        sentiment_diff = sentiment_data.get('sentiment_differential', 0)
+        high_impact_news = sentiment_data.get('high_impact_news_present', False)
+        adjustment_range = 0.10 if high_impact_news else 0.05
+        strength = abs(sentiment_diff)
+        scale_factor = 1.0 if strength > 0.3 else 0.7 if strength > 0.15 else 0.4
+        sentiment_adjustment = sentiment_diff * adjustment_range * scale_factor
+        home_prob = max(0.01, min(0.99, home_prob + sentiment_adjustment))
+        sentiment_narrative = sentiment_data.get('narrative', '')
+        contrarian_flag = sentiment_data.get('contrarian_opportunity', 0) > 0.5
+    away_prob = 1 - home_prob
+    confidence = abs(home_prob - 0.5) * 2
+
+    home_odds, away_odds = game.get('home_odds'), game.get('away_odds')
+    no_kelly = {'kelly_fraction': 0, 'bet_amount': 0, 'expected_value': 0}
+    home_kelly, away_kelly = dict(no_kelly), dict(no_kelly)
+    market_home_prob = ev_home = ev_away = None
+    bet_side = None
+    if home_odds and away_odds:
+        dec_home, dec_away = american_to_decimal(home_odds), american_to_decimal(away_odds)
+        implied_home, implied_away = 1 / dec_home, 1 / dec_away
+        market_home_prob = implied_home / (implied_home + implied_away)  # bookmaker margin removed
+        ev_home = home_prob * dec_home - 1
+        ev_away = away_prob * dec_away - 1
+        if max(ev_home, ev_away) >= min_edge:
+            bet_side = 'home' if ev_home >= ev_away else 'away'
+        if bet_side == 'home':
+            home_kelly = calculate_kelly_bet(home_prob, home_odds, bankroll, kelly_multiplier=kelly_multiplier)
+        elif bet_side == 'away':
+            away_kelly = calculate_kelly_bet(away_prob, away_odds, bankroll, kelly_multiplier=kelly_multiplier)
+
+    if bet_side == 'home':
+        recommendation = f"BET HOME: {home_team} ({home_odds:+.0f})"
+    elif bet_side == 'away':
+        recommendation = f"BET AWAY: {away_team} ({away_odds:+.0f})"
+    elif market_home_prob is None:
+        recommendation = "NO BET - no odds available"
+    else:
+        recommendation = "NO BET - no value at these odds"
+    best_ev = max(ev_home, ev_away) if ev_home is not None else None
+    bet_confidence = ("HIGH" if best_ev is not None and best_ev >= 0.08 else
+                      "MEDIUM" if bet_side else "LOW")
+
+    return {
+        'home_team': home_team,
+        'away_team': away_team,
+        'game_time': game.get('game_time'),
+        'home_probability': home_prob,
+        'away_probability': away_prob,
+        'model_home_probability': model_home_prob,
+        'market_home_probability': market_home_prob,
+        'home_odds': home_odds,
+        'away_odds': away_odds,
+        'odds_source': game.get('odds_source'),
+        'ev_home': ev_home,
+        'ev_away': ev_away,
+        'bet_side': bet_side,
+        'confidence': confidence,
+        'prediction': 'HOME' if home_prob > 0.5 else 'AWAY',
+        'recommendation': recommendation,
+        'bet_confidence': bet_confidence,
+        'kelly_home': home_kelly,
+        'kelly_away': away_kelly,
+        'real_time_data': real_time_data,
+        'model_info': model,
+        'sentiment_adjustment': sentiment_adjustment,
+        'sentiment_narrative': sentiment_narrative,
+        'contrarian_opportunity': contrarian_flag
+    }
+
+
+def calculate_kelly_bet(probability, odds, bankroll=1000, max_bet_pct=0.05, kelly_multiplier=0.5):
+    """Fractional Kelly stake (default half Kelly), capped at max_bet_pct of the bankroll"""
     try:
-        # Convert American odds to decimal
-        if odds > 0:
-            decimal_odds = (odds / 100) + 1
-        else:
-            decimal_odds = (100 / abs(odds)) + 1
-        
-        # Kelly formula: f = (bp - q) / b
-        # where b = decimal odds - 1, p = probability, q = 1 - p
-        b = decimal_odds - 1
-        p = probability
-        q = 1 - p
-        
-        kelly_fraction = (b * p - q) / b
-        
-        # Apply Kelly fraction with safety limits
-        kelly_fraction = max(0, min(kelly_fraction, max_bet_pct))
+        b = american_to_decimal(odds) - 1
+        p, q = probability, 1 - probability
+        full_kelly = (b * p - q) / b
+        kelly_fraction = max(0, min(full_kelly * kelly_multiplier, max_bet_pct))
         bet_amount = bankroll * kelly_fraction
-        
         return {
             'kelly_fraction': kelly_fraction,
             'bet_amount': bet_amount,
-            'expected_value': kelly_fraction * bankroll
+            'expected_value': bet_amount * (p * (b + 1) - 1)
         }
-        
-    except:
+    except Exception:
         return {'kelly_fraction': 0, 'bet_amount': 0, 'expected_value': 0}
-
 
 def calculate_scaled_kelly_bets(predictions, parlays, bankroll, use_parlays=False):
     """Use Kelly Criterion proportions but scale to 100% bankroll allocation"""
@@ -567,9 +416,9 @@ def calculate_scaled_kelly_bets(predictions, parlays, bankroll, use_parlays=Fals
     
     # Step 1: Calculate Kelly fractions for all bets
     for pred in predictions:
-        if 'BET' in pred['recommendation']:
-            # Determine which side to bet and get its Kelly
-            if pred['home_probability'] > pred['away_probability']:
+        if pred.get('bet_side'):
+            # Bet the side with value at the offered odds
+            if pred['bet_side'] == 'home':
                 kelly_frac = pred['kelly_home']['kelly_fraction']
                 bets_to_allocate.append({
                     'type': 'game',
@@ -1063,134 +912,71 @@ def generate_parlays(predictions, min_confidence=0.3, max_legs=6):
         traceback.print_exc()
         return []
 
+def _print_game(i, pred, show_details):
+    """Print one game's prediction"""
+    print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
+    print("-" * 50)
+    winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
+    prob = max(pred['home_probability'], pred['away_probability'])
+    print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
+    model_home = pred.get('model_home_probability')
+    market_home = pred.get('market_home_probability')
+    if market_home is not None:
+        print(f"MODEL vs MARKET: {pred['home_team']} {model_home:.1%} model / {market_home:.1%} bookmakers")
+        print(f"ODDS ({pred.get('odds_source')}): {pred['home_team']} {pred['home_odds']:+.0f}, "
+              f"{pred['away_team']} {pred['away_odds']:+.0f}")
+        print(f"EXPECTED VALUE: {pred['home_team']} {pred['ev_home']:+.1%}, {pred['away_team']} {pred['ev_away']:+.1%}")
+    else:
+        print(f"MODEL: {pred['home_team']} {model_home:.1%} (no odds available)")
+
+    if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
+        adj_pct = pred['sentiment_adjustment'] * 100
+        adj_direction = "+" if adj_pct > 0 else ""
+        print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
+        if pred.get('sentiment_narrative'):
+            print(f"    {pred['sentiment_narrative']}")
+        if pred.get('contrarian_opportunity'):
+            print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
+
+    print(f"RECOMMENDATION: {pred['recommendation']}")
+    if pred['kelly_home']['bet_amount'] > 0:
+        print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
+    if pred['kelly_away']['bet_amount'] > 0:
+        print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
+
+    if show_details and pred.get('real_time_data'):
+        rt_data = pred['real_time_data']
+        if 'injury_scores' in rt_data:
+            home_inj = rt_data['injury_scores']['home_team']
+            away_inj = rt_data['injury_scores']['away_team']
+            if home_inj > 0 or away_inj > 0:
+                print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
+
+
 def display_predictions(predictions, show_details=True, week_mode=False):
     """Display predictions in a formatted way"""
     time_range = "NEXT 7 DAYS" if week_mode else "NEXT 20 HOURS"
     print(f"\nNBA PREDICTIONS ({time_range} - UK TIMEZONE)")
     print("="*70)
-    
-    # Group predictions by date if in week mode
-    if week_mode:
-        from datetime import datetime
-        import pytz
-        
-        # Group games by date
-        games_by_date = {}
-        for pred in predictions:
-            if not pred:
-                continue
-                
-            # Try to extract date from game_time
-            try:
-                if pred.get('game_time') and pred['game_time'] != 'TBD':
-                    # Parse the game time to get date
-                    game_time = datetime.fromisoformat(pred['game_time'].replace('Z', '+00:00'))
-                    uk_tz = pytz.timezone('Europe/London')
-                    game_time_uk = game_time.astimezone(uk_tz)
-                    date_key = game_time_uk.strftime('%A, %B %d, %Y')
-                else:
-                    date_key = "TBD"
-            except:
-                date_key = "TBD"
-            
-            if date_key not in games_by_date:
-                games_by_date[date_key] = []
-            games_by_date[date_key].append(pred)
-        
-        # Display by date
-        for date, date_games in games_by_date.items():
-            print(f"\n📅 {date}")
-            print("="*50)
-            
-            for i, pred in enumerate(date_games, 1):
-                print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
-                print("-" * 50)
-                
-                # Prediction
-                winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
-                prob = max(pred['home_probability'], pred['away_probability'])
-                
-                print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
-                print(f"CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
-                
-                # Sentiment information
-                if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
-                    adj_pct = pred['sentiment_adjustment'] * 100
-                    adj_direction = "+" if adj_pct > 0 else ""
-                    print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
-                    if pred.get('sentiment_narrative'):
-                        print(f"    {pred['sentiment_narrative']}")
-                    if pred.get('contrarian_opportunity'):
-                        print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
-                
-                print(f"RECOMMENDATION: {pred['recommendation']}")
-                
-                # Kelly Criterion
-                if pred['kelly_home']['bet_amount'] > 0:
-                    print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
-                if pred['kelly_away']['bet_amount'] > 0:
-                    print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
-                
-                # Real-time factors
-                if show_details and pred['real_time_data']:
-                    rt_data = pred['real_time_data']
-                    if 'injury_scores' in rt_data:
-                        home_inj = rt_data['injury_scores']['home_team']
-                        away_inj = rt_data['injury_scores']['away_team']
-                        if home_inj > 0 or away_inj > 0:
-                            print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
-                    
-                    if 'market_intelligence' in rt_data:
-                        intel = rt_data['market_intelligence']
-                        if intel.get('sharp_money_indicators'):
-                            print(f"MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
-    else:
-        # Original display for daily predictions
+    predictions = [p for p in predictions if p]
+    if not week_mode:
         for i, pred in enumerate(predictions, 1):
-            if not pred:
-                continue
-                
-            print(f"\nGAME {i}: {pred['away_team']} @ {pred['home_team']}")
-            print("-" * 50)
-            
-            # Prediction
-            winner = pred['home_team'] if pred['home_probability'] > 0.5 else pred['away_team']
-            prob = max(pred['home_probability'], pred['away_probability'])
-            
-            print(f"PREDICTED WINNER: {winner} ({prob:.1%})")
-            print(f"CONFIDENCE: {pred['confidence']:.1%} ({pred['bet_confidence']})")
-            
-            # Sentiment information
-            if pred.get('sentiment_adjustment') and abs(pred['sentiment_adjustment']) > 0.01:
-                adj_pct = pred['sentiment_adjustment'] * 100
-                adj_direction = "+" if adj_pct > 0 else ""
-                print(f"SENTIMENT ADJUST: {adj_direction}{adj_pct:.1f}% (from news/social)")
-                if pred.get('sentiment_narrative'):
-                    print(f"    {pred['sentiment_narrative']}")
-                if pred.get('contrarian_opportunity'):
-                    print(f"    WARNING: CONTRARIAN OPPORTUNITY (public overconfident)")
-            
-            print(f"RECOMMENDATION: {pred['recommendation']}")
-            
-            # Kelly Criterion
-            if pred['kelly_home']['bet_amount'] > 0:
-                print(f"KELLY BET (HOME): ${pred['kelly_home']['bet_amount']:.0f} ({pred['kelly_home']['kelly_fraction']:.1%})")
-            if pred['kelly_away']['bet_amount'] > 0:
-                print(f"KELLY BET (AWAY): ${pred['kelly_away']['bet_amount']:.0f} ({pred['kelly_away']['kelly_fraction']:.1%})")
-            
-            # Real-time factors
-            if show_details and pred['real_time_data']:
-                rt_data = pred['real_time_data']
-                if 'injury_scores' in rt_data:
-                    home_inj = rt_data['injury_scores']['home_team']
-                    away_inj = rt_data['injury_scores']['away_team']
-                    if home_inj > 0 or away_inj > 0:
-                        print(f"INJURY IMPACT: Home {home_inj:.2f}, Away {away_inj:.2f}")
-                
-                if 'market_intelligence' in rt_data:
-                    intel = rt_data['market_intelligence']
-                    if intel.get('sharp_money_indicators'):
-                        print(f"MARKET INTEL: {', '.join(intel['sharp_money_indicators'])}")
+            _print_game(i, pred, show_details)
+        return
+    import pytz
+    games_by_date = {}
+    for pred in predictions:
+        try:
+            game_time = datetime.fromisoformat(str(pred['game_time']).replace('Z', '+00:00'))
+            date_key = game_time.astimezone(pytz.timezone('Europe/London')).strftime('%A, %B %d, %Y')
+        except Exception:
+            date_key = "TBD"
+        games_by_date.setdefault(date_key, []).append(pred)
+    for date_key, date_games in games_by_date.items():
+        print(f"\n📅 {date_key}")
+        print("="*50)
+        for i, pred in enumerate(date_games, 1):
+            _print_game(i, pred, show_details)
 
 def display_parlays(parlays):
     """Display parlay recommendations"""
@@ -1244,55 +1030,36 @@ def main():
     parser.add_argument('--confidence', type=float, default=0.25, help='Minimum confidence for bets (default: 0.25)')
     parser.add_argument('--bankroll', type=float, default=1000, help='Total bankroll amount (default: $1000)')
     parser.add_argument('--kc', '--kelly', action='store_true', dest='kelly_criterion',
-                       help='Use Kelly Criterion for bet sizing (conservative). Without this flag, bankroll is split evenly across all recommended bets.')
+                       help='Kelly Criterion bet sizing (the default; kept for compatibility)')
+    parser.add_argument('--scaled-kelly', action='store_true',
+                       help='Aggressive mode: scale Kelly stakes so 100%% of the bankroll is bet')
+    parser.add_argument('--kelly-fraction', type=float, default=0.5,
+                       help='Fraction of full Kelly to stake (default: 0.5 = half Kelly)')
+    parser.add_argument('--min-edge', type=float, default=0.03,
+                       help='Minimum expected value at the offered odds to recommend a bet (default: 0.03 = +3%%)')
     parser.add_argument('--no-details', action='store_true', help='Hide detailed analysis')
-    parser.add_argument('--model', type=str, help='Specify which model to use (e.g., "xgb", "advanced", "super", "ensemble"). Use --list-models to see available options.')
-    parser.add_argument('--list-models', action='store_true', help='List all available trained models and exit')
+    parser.add_argument('--list-models', '--model-info', action='store_true', dest='list_models',
+                       help='Show the prediction model and its test results, then exit')
     parser.add_argument('--week', action='store_true', help='Get predictions for the entire week (next 7 days) instead of just today')
     
     args = parser.parse_args()
     
     print_header()
     
-    # Handle model listing
+    # Handle model info
     if args.list_models:
-        print("Available Trained Models:")
-        print("="*70)
-        try:
-            sys.path.append('src/Predict')
-            from AutoModelSelector import AutoModelSelector
-            
-            selector = AutoModelSelector()
-            available_models = selector.scan_available_models()
-            
-            if available_models:
-                for i, (model_key, model_info) in enumerate(available_models.items(), 1):
-                    print(f"{i}. {model_key}")
-                    print(f"   Type: {model_info.get('type', 'N/A')}")
-                    print(f"   Confidence: {model_info.get('confidence', 'N/A')}")
-                    print()
-                
-                print("Usage Examples:")
-                print("   python predict.py --model xgb")
-                print("   python predict.py --model advanced")
-                print("   python predict.py --model super")
-                print("   python predict.py --model ensemble")
-            else:
-                print("[ERROR] No trained models found!")
-                print("[INFO] Train models first: python train.py --all")
-        except Exception as e:
-            print(f"[ERROR] Error scanning models: {e}")
-        return True
+        predictor = load_prediction_system()
+        if predictor:
+            print(json.dumps(predictor.metadata.get('evaluation', {}), indent=2))
+        return bool(predictor)
     
     # Display bet sizing mode
     print("\nBET SIZING CONFIGURATION")
     print("="*70)
-    if args.kelly_criterion:
-        print("Mode: Kelly Criterion (Conservative)")
-        print("   • Mathematically optimal bet sizing")
-        print("   • Typically uses 15-35% of bankroll")
+    if not args.scaled_kelly:
+        print(f"Mode: Kelly Criterion ({args.kelly_fraction:g}x Kelly, max 5% per bet)")
+        print(f"   • Only bets with at least {args.min_edge:+.0%} expected value at the offered odds")
         print("   • Reduces variance and drawdowns")
-        print("   • Recommended for long-term bankroll growth")
         print("   • Capital preservation priority")
     else:
         print("Mode: Scaled Kelly (Aggressive - 100% Allocation)")
@@ -1305,19 +1072,9 @@ def main():
     print("="*70 + "\n")
     
     # Load prediction system
-    predictor = load_prediction_system(args.model)
+    predictor = load_prediction_system()
     if not predictor:
         return False
-    
-    # Get expected feature count from the selected model
-    expected_features = predictor.get_expected_feature_count()
-    print(f"Model expects {expected_features} features")
-    
-    # Display which model is being used
-    if hasattr(predictor, 'best_model') and predictor.best_model:
-        print(f"Using model: {predictor.best_model['name']}")
-    else:
-        print("Using default model selection")
     
     # Load real-time data provider
     real_time_provider = None
@@ -1353,10 +1110,6 @@ def main():
     for game in games:
         home_team = game['home_team']
         away_team = game['away_team']
-        odds = {
-            'home_odds': game.get('home_odds'),
-            'away_odds': game.get('away_odds')
-        }
         
         print(f"  Analyzing: {away_team} @ {home_team}...")
         
@@ -1370,15 +1123,18 @@ def main():
             except Exception as e:
                 pass  # Silently continue if sentiment fails
         
-        # Create game features with correct count for the selected model
-        game_features, real_time_data = create_game_features(
-            home_team, away_team, real_time_provider, feature_count=expected_features
-        )
+        # Real-time injury/market info (display only)
+        real_time_data = None
+        if real_time_provider:
+            try:
+                real_time_data = real_time_provider.get_comprehensive_game_data(home_team, away_team, datetime.now())
+            except Exception:
+                pass
         
-        # Make prediction with actual bankroll and sentiment
+        # Model prediction, sentiment adjustment and value against the odds
         prediction = make_game_prediction(
-            predictor, home_team, away_team, game_features, 
-            real_time_data, odds, bankroll=args.bankroll, sentiment_data=sentiment_data
+            predictor, game, bankroll=args.bankroll, sentiment_data=sentiment_data,
+            min_edge=args.min_edge, kelly_multiplier=args.kelly_fraction, real_time_data=real_time_data
         )
         
         if prediction:
@@ -1399,7 +1155,7 @@ def main():
         
         high_conf_count = sum(1 for p in predictions if p['confidence'] > args.confidence)
         avg_confidence = np.mean([p['confidence'] for p in predictions])
-        recommended_bets = sum(1 for p in predictions if 'BET' in p['recommendation'])
+        recommended_bets = sum(1 for p in predictions if p.get('bet_side'))
         
         print(f"Total Games Analyzed: {len(predictions)}")
         print(f"High Confidence Games: {high_conf_count}")
@@ -1407,7 +1163,7 @@ def main():
         print(f"Recommended Bets: {recommended_bets}")
         
         # Determine allocation mode
-        if args.kelly_criterion:
+        if not args.scaled_kelly:
             # KELLY CRITERION MODE (Conservative, optimal bet sizing)
             print(f"\n💰 BET SIZING MODE: Kelly Criterion (Conservative)")
             print("-" * 70)
@@ -1520,6 +1276,8 @@ def main():
     # Save predictions to Excel with parlays and bankroll allocation
     save_predictions_to_excel(predictions, parlays if args.parlays else [], args.sportsbook, args.bankroll, week_mode=args.week)
     
+    if sentiment_analyzer:
+        print("\nNote: the model was backtested without the sentiment adjustment; that part is untested.")
     print(f"\n🎉 PREDICTION ANALYSIS COMPLETE!")
     print("💡 Remember: Bet responsibly and within your means!")
     
@@ -1541,10 +1299,18 @@ def save_predictions_to_excel(predictions, parlays, sportsbook, bankroll, week_m
             # Sheet 1: Game Predictions
             pred_data = []
             for pred in predictions:
+                market = pred.get('market_home_probability')
                 pred_data.append({
                     'Game': f"{pred['away_team']} @ {pred['home_team']}",
                     'Predicted Winner': pred['home_team'] if pred['prediction'] == 'HOME' else pred['away_team'],
                     'Win Probability': f"{max(pred['home_probability'], pred['away_probability']):.1%}",
+                    'Model Home Win %': f"{pred['model_home_probability']:.1%}",
+                    'Bookmaker Home Win %': f"{market:.1%}" if market is not None else "-",
+                    'Odds (Home/Away)': (f"{pred['home_odds']:+.0f} / {pred['away_odds']:+.0f}"
+                                         if market is not None else "-"),
+                    'Odds Source': pred.get('odds_source') or "-",
+                    'EV (Home/Away)': (f"{pred['ev_home']:+.1%} / {pred['ev_away']:+.1%}"
+                                       if market is not None else "-"),
                     'Confidence': f"{pred['confidence']:.1%}",
                     'Recommendation': pred['recommendation'],
                     'Kelly Bet (Home)': f"${pred['kelly_home']['bet_amount']:.2f}" if pred['kelly_home']['bet_amount'] > 0 else "-",
