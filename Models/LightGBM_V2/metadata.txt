@@ -1,8 +1,8 @@
 {
-  "trained_at": "2026-10-26T16:52:13",
-  "games": 17664,
+  "trained_at": "2026-10-28T17:57:02",
+  "games": 17677,
   "first_game": "2012-11-02",
-  "last_game": "2026-10-25",
+  "last_game": "2026-10-27",
   "features": [
     "home_elo_overall",
     "away_elo_overall",
@@ -244,18 +244,18 @@
     "verbose": -1
   },
   "evaluation": {
-    "trees": 164,
+    "trees": 127,
     "validation_2024_25": {
       "games": 1305,
-      "accuracy": 0.6605,
-      "log_loss": 0.6144,
-      "brier": 0.213
+      "accuracy": 0.6582,
+      "log_loss": 0.614,
+      "brier": 0.2129
     },
     "test_2025_26": {
       "games": 1306,
-      "accuracy": 0.6792,
-      "log_loss": 0.6022,
-      "brier": 0.2072
+      "accuracy": 0.6845,
+      "log_loss": 0.6027,
+      "brier": 0.2073
     },
     "test_2025_26_always_home": {
       "games": 1306,
@@ -264,18 +264,18 @@
       "brier": 0.2474
     },
     "current_season_so_far": {
-      "games": 27,
-      "accuracy": 0.6296,
-      "log_loss": 0.5977,
-      "brier": 0.2058
+      "games": 40,
+      "accuracy": 0.625,
+      "log_loss": 0.6004,
+      "brier": 0.2081
     },
     "betting_2025_26": {
       "games_with_odds": 1291,
       "model": {
         "games": 1291,
-        "accuracy": 0.6785,
-        "log_loss": 0.6038,
-        "brier": 0.2078
+        "accuracy": 0.684,
+        "log_loss": 0.6044,
+        "brier": 0.2081
       },
       "bookmakers": {
         "games": 1291,
@@ -283,9 +283,9 @@
         "log_loss": 0.5787,
         "brier": 0.198
       },
-      "bets": 973,
-      "bet_win_rate": 0.3227,
-      "flat_stake_roi": -0.088,
+      "bets": 974,
+      "bet_win_rate": 0.3183,
+      "flat_stake_roi": -0.086,
       "min_edge": 0.03
     }
   }
