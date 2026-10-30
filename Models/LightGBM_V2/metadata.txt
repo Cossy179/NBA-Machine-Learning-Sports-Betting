@@ -1,8 +1,8 @@
 {
-  "trained_at": "2026-10-28T17:57:02",
-  "games": 17677,
+  "trained_at": "2026-10-30T21:45:36",
+  "games": 17692,
   "first_game": "2012-11-02",
-  "last_game": "2026-10-27",
+  "last_game": "2026-10-29",
   "features": [
     "home_elo_overall",
     "away_elo_overall",
@@ -264,10 +264,10 @@
       "brier": 0.2474
     },
     "current_season_so_far": {
-      "games": 40,
-      "accuracy": 0.625,
-      "log_loss": 0.6004,
-      "brier": 0.2081
+      "games": 55,
+      "accuracy": 0.6364,
+      "log_loss": 0.6293,
+      "brier": 0.2202
     },
     "betting_2025_26": {
       "games_with_odds": 1291,
